@@ -40,7 +40,7 @@ func RequiresTigeraSecure(cfg *rest.Config) (bool, error) {
 	// Use the discovery client to determine if the tigera secure specific APIs exist.
 	resources, err := clientset.Discovery().ServerResourcesForGroupVersion("operator.tigera.io/v1")
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to discover resources for 'operator.tigera.io/v1': %w", err)
 	}
 	for _, r := range resources.APIResources {
 		if r.Kind == "APIServer" {

@@ -1,0 +1,17 @@
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"operator.tigera.io/v1","kind":"Installation","metadata":{"annotations":{},"name":"default"},"spec":{"kubernetesProvider":"EKS"}}
+  generation: 1
+  name: default
+  selfLink: /apis/operator.tigera.io/v1/installations/default
+spec:
+  flexVolumePath: /usr/libexec/kubernetes/kubelet-plugins/volume/exec/
+  kubernetesProvider: EKS
+  nodeUpdateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate
+  variant: TigeraSecureEnterprise

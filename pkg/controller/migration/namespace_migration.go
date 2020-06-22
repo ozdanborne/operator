@@ -12,6 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package migration provides a controller capable of gracefully migrating an existing Calico install that is not managed by the operator
+// to a new Calico install that is managed by the operator. The process by which this is done is similar to how a Deployment rolling-update will
+// transition from one replicaset to another. However, since Kubernetes doesn't provide this functionality natively for Daemonsets, we implement it here.
+//
+// Assuming Daemonset 'ds/A' exists, the process is basically as follows:
+//
+// 1. Update existing ds/A node-selector to select a new label that is applied to all nodes.
+//
+// 2. Create a new Daemonset, ds/B, which selects a label that doesn't currently match any nodes.
+//
+// 3. Node-by-node, remove the old label and add the new label.
+//
+// This process ensures that only one node is updated at a time, and ensures each pod of the new Daemonset comes up and reports Ready before
+// the next node is upgraded.
 package migration
 
 import (
@@ -202,7 +216,7 @@ func SetTyphaAntiAffinity(d *appsv1.Deployment) {
 // returning (the exception being label clean up on the nodes), if there is an error
 // it will be returned and the
 func (m *CoreNamespaceMigration) Run(log logr.Logger) error {
-	if err := m.deleteKubeSystemKubeControllers(); err != nil {
+	if err := m.disableKubeSystemKubeControllers(); err != nil {
 		return fmt.Errorf("failed deleting kube-system calico-kube-controllers: %s", err.Error())
 	}
 	log.V(1).Info("Deleted previous calico-kube-controllers deployment")
@@ -222,11 +236,7 @@ func (m *CoreNamespaceMigration) Run(log logr.Logger) error {
 		return fmt.Errorf("failed to migrate all nodes: %s", err.Error())
 	}
 	log.V(1).Info("Nodes migrated")
-	if err := m.deleteKubeSystemCalicoNode(); err != nil {
-		return fmt.Errorf("failed to delete kube-system node DaemonSet: %s", err.Error())
-	}
-	log.V(1).Info("kube-system node DaemonSet deleted")
-	if err := m.deleteKubeSystemTypha(); err != nil {
+	if err := m.disableKubeSystemTypha(); err != nil {
 		return fmt.Errorf("failed to delete kube-system typha Deployment: %s", err.Error())
 	}
 
@@ -258,34 +268,18 @@ func (m *CoreNamespaceMigration) CleanupMigration() error {
 	return nil
 }
 
-// deleteKubeSystemKubeControllers deletes the calico-kube-controllers deployment
+// disableKubeSystemKubeControllers deletes the calico-kube-controllers deployment
 // in the kube-system namespace
-func (m *CoreNamespaceMigration) deleteKubeSystemKubeControllers() error {
-	err := m.client.AppsV1().Deployments(kubeSystem).Delete(kubeControllerDeploymentName, &metav1.DeleteOptions{})
-	if err != nil && !apierrs.IsNotFound(err) {
-		return err
-	}
-	return nil
+func (m *CoreNamespaceMigration) disableKubeSystemKubeControllers() error {
+	_, err := m.client.AppsV1().Deployments(kubeSystem).Patch(kubeControllerDeploymentName, types.JSONPatchType, []byte(`{"spec":{"replicas":0}}`))
+	return err
 }
 
-// deleteKubeSystemTypha deletes the typha deployment
-// in the kube-system namespace
-func (m *CoreNamespaceMigration) deleteKubeSystemTypha() error {
-	err := m.client.AppsV1().Deployments(kubeSystem).Delete(typhaDeploymentName, &metav1.DeleteOptions{})
-	if err != nil && !apierrs.IsNotFound(err) {
-		return err
-	}
-	return nil
-}
-
-// deleteKubeSystemCalicoNode deletes the calico-node daemonset
-// in the kube-system namespace
-func (m *CoreNamespaceMigration) deleteKubeSystemCalicoNode() error {
-	err := m.client.AppsV1().DaemonSets(kubeSystem).Delete(nodeDaemonSetName, &metav1.DeleteOptions{})
-	if err != nil && !apierrs.IsNotFound(err) {
-		return err
-	}
-	return nil
+// disableKubeSystemTypha scales the typha deployment
+// in the kube-system namespace down to zero replicas.
+func (m *CoreNamespaceMigration) disableKubeSystemTypha() error {
+	_, err := m.client.AppsV1().Deployments(kubeSystem).Patch(typhaDeploymentName, types.JSONPatchType, []byte(`{"spec":{"replicas":0}}`))
+	return err
 }
 
 // waitForOperatorTyphaDeploymentReady waits until the 'new' typha deployment in
