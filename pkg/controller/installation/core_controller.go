@@ -865,6 +865,9 @@ func updateInstallationForExistingInstall(i *operator.Installation, ei *parser.C
 	if ei.AutoDetectionMethod != nil {
 		i.Spec.CalicoNetwork.NodeAddressAutodetectionV4 = ei.AutoDetectionMethod
 	}
+	if ei.MTU != nil {
+		i.Spec.CalicoNetwork.MTU = ei.MTU
+	}
 	return nil
 }
 

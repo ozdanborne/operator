@@ -16,12 +16,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Config represents the configuration pulled from the existing install.
 type Config struct {
 	AutoDetectionMethod *operatorv1.NodeAddressAutodetection
+	MTU                 *int32
 }
 
 // ErrIncompatibleCluster is thrown if a config option was detected in the existing install
@@ -86,6 +88,22 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 		if *netBackend != "" && *netBackend != "bird" {
 			return nil, ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
 		}
+	}
+
+	// CNI_MTU
+	cni := getContainer(ds.Spec.Template.Spec.InitContainers, "install-cni")
+	if cni == nil {
+		return nil, ErrIncompatibleCluster{"couldn't find install-cni container in existing calico-node daemonset"}
+	}
+	mtu, err := getEnv(ctx, client, cni.Env, "CNI_MTU")
+	if err != nil {
+		return nil, err
+	}
+	if mtu != nil {
+		// TODO: dear god clean this up what is wrong with you
+		i := intstr.FromString(*mtu)
+		iv := int32(i.IntValue())
+		config.MTU = &iv
 	}
 
 	return config, nil
