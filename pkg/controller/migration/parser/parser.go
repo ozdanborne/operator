@@ -13,6 +13,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,18 +56,36 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 	}
 
 	// FELIX_DEFAULTENDPOINTTOHOSTACTION
-	defaultWepAction := getEnv(c.Env, "FELIX_DEFAULTENDPOINTTOHOSTACTION")
+	defaultWepAction, err := getEnv(ctx, client, c.Env, "FELIX_DEFAULTENDPOINTTOHOSTACTION")
+	if err != nil {
+		return nil, err
+	}
 	if defaultWepAction != nil && strings.ToLower(*defaultWepAction) != "accept" {
 		return nil, ErrIncompatibleCluster{fmt.Sprintf("unexpected FELIX_DEFAULTENDPOINTTOHOSTACTION: '%s'. Only 'accept' is supported.", *defaultWepAction)}
 	}
 
 	// IP_AUTODETECTION_METHOD
-	if am := getEnv(c.Env, "IP_AUTODETECTION_METHOD"); am != nil {
+	am, err := getEnv(ctx, client, c.Env, "IP_AUTODETECTION_METHOD")
+	if err != nil {
+		return nil, err
+	}
+	if am != nil {
 		tam, err := getAutoDetection(*am)
 		if err != nil {
 			return nil, err
 		}
 		config.AutoDetectionMethod = &tam
+	}
+
+	// CALICO_NETWORKING_BACKEND
+	netBackend, err := getEnv(ctx, client, c.Env, "CALICO_NETWORKING_BACKEND")
+	if err != nil {
+		return nil, err
+	}
+	if netBackend != nil {
+		if *netBackend != "" && *netBackend != "bird" {
+			return nil, ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
+		}
 	}
 
 	return config, nil
@@ -83,13 +102,31 @@ func getContainer(containers []corev1.Container, name string) *corev1.Container 
 
 // getEnv gets an environment variable from a container. Nil is returned
 // if the requested Key was not found.
-func getEnv(env []corev1.EnvVar, key string) *string {
+func getEnv(ctx context.Context, client client.Client, env []corev1.EnvVar, key string) (*string, error) {
 	for _, e := range env {
 		if e.Name == key {
-			return &e.Value
+			if e.Value != "" {
+				return &e.Value, nil
+			}
+			// if Value is empty, one of the ConfigMapKeyRefs must be used
+			if e.ValueFrom.ConfigMapKeyRef != nil {
+				cm := v1.ConfigMap{}
+				err := client.Get(ctx, types.NamespacedName{
+					Name:      e.ValueFrom.ConfigMapKeyRef.LocalObjectReference.Name,
+					Namespace: "kube-system",
+				}, &cm)
+				if err != nil {
+					return nil, err
+				}
+				v := cm.Data[e.ValueFrom.ConfigMapKeyRef.Key]
+				return &v, nil
+			}
+
+			// TODO: support secretRef, fieldRef, and resourceFieldRef
+			return nil, ErrIncompatibleCluster{"only configMapRef & explicit values supported for env vars at this time"}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // autoDetectCIDR auto-detects the IP and Network using the requested
