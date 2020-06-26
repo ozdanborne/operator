@@ -54,7 +54,7 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 	// get the calico-node container
 	c := getContainer(ds.Spec.Template.Spec.Containers, "calico-node")
 	if c == nil {
-		return nil, fmt.Errorf("couldn't find calico-node container in existing calico-node daemonset")
+		return nil, ErrIncompatibleCluster{"couldn't find calico-node container in existing calico-node daemonset"}
 	}
 
 	// FELIX_DEFAULTENDPOINTTOHOSTACTION
@@ -63,7 +63,9 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 		return nil, err
 	}
 	if defaultWepAction != nil && strings.ToLower(*defaultWepAction) != "accept" {
-		return nil, ErrIncompatibleCluster{fmt.Sprintf("unexpected FELIX_DEFAULTENDPOINTTOHOSTACTION: '%s'. Only 'accept' is supported.", *defaultWepAction)}
+		return nil, ErrIncompatibleCluster{
+			fmt.Sprintf("unexpected FELIX_DEFAULTENDPOINTTOHOSTACTION: '%s'. Only 'accept' is supported.", *defaultWepAction),
+		}
 	}
 
 	// IP_AUTODETECTION_METHOD
