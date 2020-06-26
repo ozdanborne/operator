@@ -1,0 +1,81 @@
+package parser_test
+
+import (
+	"context"
+
+	corev1 "k8s.io/api/core/v1"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/tigera/operator/pkg/controller/migration/parser"
+)
+
+var _ = Describe("Parser", func() {
+	ctx := context.TODO()
+
+	It("should not detect an installation if none exists", func() {
+		c := fake.NewFakeClient()
+		config, err := parser.GetExistingConfig(ctx, c)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(config).To(BeNil())
+	})
+
+	It("should detect an installation if one exists", func() {
+		c := fake.NewFakeClient(&appsv1.DaemonSet{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      "calico-node",
+				Namespace: "kube-system",
+			},
+		})
+		_, err := parser.GetExistingConfig(ctx, c)
+		// though it will detect an install, it will be in the form of an incompatible-cluster error
+		Expect(err).To(BeAssignableToTypeOf(parser.ErrIncompatibleCluster{}))
+	})
+
+	It("should detect a valid installation", func() {
+		c := fake.NewFakeClient(emptyNodeSpec())
+		cfg, err := parser.GetExistingConfig(ctx, c)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cfg).ToNot(BeNil())
+	})
+
+	It("should detect an MTU", func() {
+		ds := emptyNodeSpec()
+		ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{{
+			Name:  "CNI_MTU",
+			Value: "24",
+		}}
+		c := fake.NewFakeClient(ds)
+		cfg, err := parser.GetExistingConfig(ctx, c)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cfg).ToNot(BeNil())
+		exp := int32(24)
+		Expect(cfg.MTU).To(Equal(&exp))
+	})
+})
+
+func emptyNodeSpec() *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "calico-node",
+			Namespace: "kube-system",
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{{
+						Name: "install-cni",
+					}},
+					Containers: []corev1.Container{{
+						Name: "calico-node",
+					}},
+				},
+			},
+		},
+	}
+}
