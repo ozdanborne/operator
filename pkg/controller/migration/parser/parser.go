@@ -86,10 +86,17 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 	if err != nil {
 		return nil, err
 	}
-	if netBackend != nil {
-		if *netBackend != "" && *netBackend != "bird" {
-			return nil, ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
-		}
+	if netBackend != nil && *netBackend != "" && *netBackend != "bird" {
+		return nil, ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
+	}
+
+	// DATASTORE_TYPE
+	dsType, err := getEnv(ctx, client, c.Env, "DATASTORE_TYPE")
+	if err != nil {
+		return nil, err
+	}
+	if dsType != nil && *dsType != "" && *dsType != "kubernetes" {
+		return nil, ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
 	}
 
 	// CNI_MTU
