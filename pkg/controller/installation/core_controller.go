@@ -862,6 +862,10 @@ func isOpenshiftOnAws(install *operator.Installation, ctx context.Context, clien
 }
 
 func updateInstallationForExistingInstall(i *operator.Installation, ei *parser.Config) error {
+	if i.Spec.CalicoNetwork == nil {
+		i.Spec.CalicoNetwork = &operator.CalicoNetworkSpec{}
+	}
+
 	if ei.AutoDetectionMethod != nil {
 		i.Spec.CalicoNetwork.NodeAddressAutodetectionV4 = ei.AutoDetectionMethod
 	}
