@@ -35,6 +35,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if cfg == nil {
+		return fmt.Errorf("no install detected")
+	}
 
 	bits, err := json.Marshal(cfg)
 	if err != nil {
