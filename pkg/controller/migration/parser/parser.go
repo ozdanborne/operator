@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,6 +26,7 @@ type Config struct {
 	AutoDetectionMethod *operatorv1.NodeAddressAutodetection
 	MTU                 *int32
 	FelixEnvVars        []corev1.EnvVar
+	CNIConfig           string
 }
 
 // ErrIncompatibleCluster is thrown if a config option was detected in the existing install
@@ -37,20 +39,58 @@ func (e ErrIncompatibleCluster) Error() string {
 	return e.err
 }
 
+type components struct {
+	// TODO: if we keep these as apimachinery structs, we can't
+	// add custom fields to indicate if fields were checked.
+	node            appsv1.DaemonSet
+	kubeControllers appsv1.Deployment
+	typha           appsv1.Deployment
+}
+
+func getComponents(ctx context.Context, client client.Client) (*components, error) {
+	var ds = appsv1.DaemonSet{}
+	if err := client.Get(ctx, types.NamespacedName{
+		Name:      "calico-node",
+		Namespace: metav1.NamespaceSystem,
+	}, &ds); err != nil {
+		return nil, err
+	}
+
+	var kc = appsv1.Deployment{}
+	if err := client.Get(ctx, types.NamespacedName{
+		Name:      "calico-kube-controllers",
+		Namespace: metav1.NamespaceSystem,
+	}, &kc); err != nil {
+		return nil, err
+	}
+
+	// TODO: handle partial detection
+	// var t = appsv1.Deployment{}
+	// if err := client.Get(ctx, types.NamespacedName{
+	// 	Name:      "calico-typha",
+	// 	Namespace: metav1.NamespaceSystem,
+	// }, &t); err != nil {
+	// 	return nil, err
+	// }
+
+	return &components{
+		node:            ds,
+		kubeControllers: kc,
+		// typha:           t,
+	}, nil
+}
+
 func GetExistingConfig(ctx context.Context, client client.Client) (*Config, error) {
 	config := &Config{}
 
-	var ds = appsv1.DaemonSet{}
-	err := client.Get(ctx, types.NamespacedName{
-		Name:      "calico-node",
-		Namespace: "kube-system",
-	}, &ds)
+	comps, err := getComponents(ctx, client)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	ds := comps.node
 
 	var checkedVars = map[string]bool{}
 
@@ -163,7 +203,9 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(*cniConfig)
+	if cniConfig != nil {
+		config.CNIConfig = *cniConfig
+	}
 
 	mtu, err := getEnv(ctx, client, cni.Env, "CNI_MTU")
 	if err != nil {
