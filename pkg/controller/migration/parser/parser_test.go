@@ -31,14 +31,14 @@ var _ = Describe("Parser", func() {
 				Name:      "calico-node",
 				Namespace: "kube-system",
 			},
-		})
+		}, emptyKubeControllerSpec())
 		_, err := parser.GetExistingConfig(ctx, c)
 		// though it will detect an install, it will be in the form of an incompatible-cluster error
 		Expect(err).To(BeAssignableToTypeOf(parser.ErrIncompatibleCluster{}))
 	})
 
 	It("should detect a valid installation", func() {
-		c := fake.NewFakeClient(emptyNodeSpec())
+		c := fake.NewFakeClient(emptyNodeSpec(), emptyKubeControllerSpec())
 		cfg, err := parser.GetExistingConfig(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
@@ -50,12 +50,37 @@ var _ = Describe("Parser", func() {
 			Name:  "CNI_MTU",
 			Value: "24",
 		}}
-		c := fake.NewFakeClient(ds)
+		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
 		cfg, err := parser.GetExistingConfig(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 		exp := int32(24)
 		Expect(cfg.MTU).To(Equal(&exp))
+	})
+
+	It("should fail on invalid cni", func() {
+		ds := emptyNodeSpec()
+		ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{{
+			Name:  "CNI_NETWORK_CONFIG",
+			Value: "{",
+		}}
+
+		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
+		_, err := parser.GetExistingConfig(ctx, c)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("should parse cni", func() {
+		ds := emptyNodeSpec()
+		ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{{
+			Name:  "CNI_NETWORK_CONFIG",
+			Value: "{}",
+		}}
+
+		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
+		cfg, err := parser.GetExistingConfig(ctx, c)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cfg).ToNot(BeNil())
 	})
 })
 
@@ -71,6 +96,24 @@ func emptyNodeSpec() *appsv1.DaemonSet {
 					InitContainers: []corev1.Container{{
 						Name: "install-cni",
 					}},
+					Containers: []corev1.Container{{
+						Name: "calico-node",
+					}},
+				},
+			},
+		},
+	}
+}
+
+func emptyKubeControllerSpec() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "calico-kube-controllers",
+			Namespace: "kube-system",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
 						Name: "calico-node",
 					}},

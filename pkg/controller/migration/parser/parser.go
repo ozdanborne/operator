@@ -5,8 +5,10 @@ package parser
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	operatorv1 "github.com/tigera/operator/pkg/apis/operator/v1"
@@ -20,6 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+var ctx = context.Background()
 
 // Config represents the configuration pulled from the existing install.
 type Config struct {
@@ -39,12 +43,57 @@ func (e ErrIncompatibleCluster) Error() string {
 	return e.err
 }
 
+type RaemonSet struct {
+	appsv1.DaemonSet
+
+	checkedVars map[string]checkedFields
+}
+
+func (r *RaemonSet) uncheckedVars() []string {
+	unchecked := []string{}
+
+	for _, t := range r.Spec.Template.Spec.Containers {
+		for _, v := range t.Env {
+
+			if _, ok := r.checkedVars[t.Name].envVars[v.Name]; !ok {
+				unchecked = append(unchecked, t.Name+"/"+v.Name)
+			}
+		}
+	}
+	return unchecked
+}
+
+// getEnv gets the value of an environment variable and marks that it has been checked.
+func (r *RaemonSet) getEnv(ctx context.Context, client client.Client, container string, key string) (*string, error) {
+	c := getContainers(r.Spec.Template.Spec, container)
+	if c == nil {
+		return nil, ErrIncompatibleCluster{fmt.Sprintf("couldn't find %s container in existing calico-node daemonset", container)}
+	}
+	r.ignoreEnv(container, key)
+	return getEnv(ctx, client, c.Env, key)
+}
+
+func (r *RaemonSet) ignoreEnv(container, key string) {
+	if _, ok := r.checkedVars[container]; !ok {
+		r.checkedVars[container] = checkedFields{
+			map[string]bool{},
+		}
+	}
+	r.checkedVars[container].envVars[key] = true
+}
+
+type checkedFields struct {
+	envVars map[string]bool
+}
+
 type components struct {
 	// TODO: if we keep these as apimachinery structs, we can't
 	// add custom fields to indicate if fields were checked.
-	node            appsv1.DaemonSet
+	node            RaemonSet
 	kubeControllers appsv1.Deployment
 	typha           appsv1.Deployment
+	client          client.Client
+	checkedVars     map[string]bool
 }
 
 func getComponents(ctx context.Context, client client.Client) (*components, error) {
@@ -74,10 +123,104 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 	// }
 
 	return &components{
-		node:            ds,
+		client: client,
+		node: RaemonSet{
+			ds,
+			map[string]checkedFields{},
+		},
 		kubeControllers: kc,
 		// typha:           t,
+
 	}, nil
+}
+
+func (c *components) handleCore(*Config) error {
+	dsType, err := c.node.getEnv(ctx, c.client, "calico-node", "DATASTORE_TYPE")
+	if err != nil {
+		return err
+	}
+	if dsType != nil && *dsType != "kubernetes" {
+		return ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
+	}
+
+	// mark other variables as ignored
+	c.node.ignoreEnv("calico-node", "WAIT_FOR_DATASTORE")
+	c.node.ignoreEnv("calico-node", "CLUSTER_TYPE")
+	c.node.ignoreEnv("calico-node", "NODENAME")
+	c.node.ignoreEnv("calico-node", "CALICO_DISABLE_FILE_LOGGING")
+
+	return nil
+}
+
+func (c *components) handleNetwork(cfg *Config) error {
+	// CALICO_NETWORKING_BACKEND
+	netBackend, err := c.node.getEnv(ctx, c.client, "calico-node", "CALICO_NETWORKING_BACKEND")
+	if err != nil {
+		return err
+	}
+	if netBackend != nil && *netBackend != "" && *netBackend != "bird" {
+		return ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
+	}
+
+	// FELIX_DEFAULTENDPOINTTOHOSTACTION
+	defaultWepAction, err := c.node.getEnv(ctx, c.client, "calico-node", "FELIX_DEFAULTENDPOINTTOHOSTACTION")
+	if err != nil {
+		return err
+	}
+	if defaultWepAction != nil && strings.ToLower(*defaultWepAction) != "accept" {
+		return ErrIncompatibleCluster{
+			fmt.Sprintf("unexpected FELIX_DEFAULTENDPOINTTOHOSTACTION: '%s'. Only 'accept' is supported.", *defaultWepAction),
+		}
+	}
+
+	ipMethod, err := c.node.getEnv(ctx, c.client, "calico-node", "IP")
+	if err != nil {
+		return err
+	}
+	if ipMethod != nil && strings.ToLower(*ipMethod) != "autodetect" {
+		return ErrIncompatibleCluster{
+			fmt.Sprintf("unexpected IP value: '%s'. Only 'autodetect' is supported.", *ipMethod),
+		}
+	}
+
+	// am, err := getEnvVar(ctx, c.client, node.Env, "IP_AUTODETECTION_METHOD")
+	// if err != nil {
+	// 	return err
+	// }
+	// tam, err := getAutoDetection(am)
+	// if err != nil {
+	// 	return err
+	// }
+	// config.AutoDetectionMethod = &tam
+
+	// case "CALICO_IPV4POOL_IPIP", "CALICO_IPV4POOL_VXLAN":
+	// 	// TODO
+	// 	checkedVars[v.Name] = true
+
+	cniConfig, err := c.node.getEnv(ctx, c.client, "install-cni", "CNI_NETWORK_CONFIG")
+	if err != nil {
+		return err
+	}
+	if cniConfig != nil {
+		var cni map[string]interface{}
+		bits := []byte(*cniConfig)
+		if err := json.Unmarshal(bits, &cni); err != nil {
+			return err
+		}
+	}
+
+	mtu, err := c.node.getEnv(ctx, c.client, "install-cni", "CNI_MTU")
+	if err != nil {
+		return err
+	}
+	if mtu != nil {
+		// TODO: dear god clean this up what is wrong with you
+		i := intstr.FromString(*mtu)
+		iv := int32(i.IntValue())
+		cfg.MTU = &iv
+	}
+
+	return nil
 }
 
 func GetExistingConfig(ctx context.Context, client client.Client) (*Config, error) {
@@ -86,143 +229,45 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 	comps, err := getComponents(ctx, client)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
+			log.Print("no existing install found: ", err)
 			return nil, nil
 		}
 		return nil, err
 	}
-	ds := comps.node
 
-	var checkedVars = map[string]bool{}
-
-	// get the calico-node container
-	c := getContainer(ds.Spec.Template.Spec.Containers, "calico-node")
-	if c == nil {
-		return nil, ErrIncompatibleCluster{"couldn't find calico-node container in existing calico-node daemonset"}
-	}
-
-	for _, v := range c.Env {
-		if _, ok := checkedVars[v.Name]; ok {
-			continue
-		}
-
-		switch v.Name {
-		case "FELIX_DEFAULTENDPOINTTOHOSTACTION":
-			defaultWepAction, err := getEnvVar(ctx, client, v)
-			if err != nil {
-				return nil, err
-			}
-			if strings.ToLower(defaultWepAction) != "accept" {
-				return nil, ErrIncompatibleCluster{
-					fmt.Sprintf("unexpected FELIX_DEFAULTENDPOINTTOHOSTACTION: '%s'. Only 'accept' is supported.", defaultWepAction),
-				}
-			}
-			checkedVars[v.Name] = true
-
-		case "IP":
-			ipMethod, err := getEnvVar(ctx, client, v)
-			if err != nil {
-				return nil, err
-			}
-			if strings.ToLower(ipMethod) != "autodetect" {
-				return nil, ErrIncompatibleCluster{
-					fmt.Sprintf("unexpected IP value: '%s'. Only 'autodetect' is supported.", ipMethod),
-				}
-			}
-			checkedVars[v.Name] = true
-
-		case "IP_AUTODETECTION_METHOD":
-			am, err := getEnvVar(ctx, client, v)
-			if err != nil {
-				return nil, err
-			}
-			tam, err := getAutoDetection(am)
-			if err != nil {
-				return nil, err
-			}
-			config.AutoDetectionMethod = &tam
-
-			checkedVars[v.Name] = true
-
-		case "CALICO_IPV4POOL_IPIP", "CALICO_IPV4POOL_VXLAN":
-			// TODO
-			checkedVars[v.Name] = true
-
-		case "CALICO_NETWORKING_BACKEND":
-			netBackend, err := getEnvVar(ctx, client, v)
-			if err != nil {
-				return nil, err
-			}
-			if netBackend != "bird" {
-				return nil, ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
-			}
-
-			checkedVars[v.Name] = true
-
-		case "DATASTORE_TYPE":
-			dsType, err := getEnvVar(ctx, client, v)
-			if err != nil {
-				return nil, err
-			}
-			if dsType != "kubernetes" {
-				return nil, ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
-			}
-			checkedVars["DATASTORE_TYPE"] = true
-
-		// all ignored vars
-		case "WAIT_FOR_DATASTORE",
-			"CLUSTER_TYPE",
-			"NODENAME",
-			"CALICO_DISABLE_FILE_LOGGING":
-			// ignore
-			checkedVars[v.Name] = true
-
-		// all validation vars
-		default:
-			if strings.HasPrefix(v.Name, "FELIX_") {
-				config.FelixEnvVars = append(config.FelixEnvVars, v)
-				checkedVars[v.Name] = true
-				continue
-			}
-			return nil, ErrIncompatibleCluster{fmt.Sprintf("unexpected env var: %s", v.Name)}
-		}
-	}
-
-	// go back through the list at the end to make sure we checked everything.
-	for _, v := range c.Env {
-		if _, ok := checkedVars[v.Name]; !ok {
-			return nil, ErrIncompatibleCluster{fmt.Sprintf("unexpected env var: %s", v.Name)}
-		}
-	}
-
-	// CNI_MTU
-	cni := getContainer(ds.Spec.Template.Spec.InitContainers, "install-cni")
-	if cni == nil {
-		return nil, ErrIncompatibleCluster{"couldn't find install-cni container in existing calico-node daemonset"}
-	}
-	cniConfig, err := getEnv(ctx, client, cni.Env, "CNI_NETWORK_CONFIG")
-	if err != nil {
+	if err := comps.handleNetwork(config); err != nil {
 		return nil, err
 	}
-	if cniConfig != nil {
-		config.CNIConfig = *cniConfig
-	}
 
-	mtu, err := getEnv(ctx, client, cni.Env, "CNI_MTU")
-	if err != nil {
+	if err := comps.handleCore(config); err != nil {
 		return nil, err
 	}
-	if mtu != nil {
-		// TODO: dear god clean this up what is wrong with you
-		i := intstr.FromString(*mtu)
-		iv := int32(i.IntValue())
-		config.MTU = &iv
-	}
+
+	// uncheckedVars := comps.node.uncheckedVars()
+	// // go back through the list at the end to make sure we checked everything.
+	// if len(uncheckedVars) != 0 {
+	// 	return nil, ErrIncompatibleCluster{fmt.Sprintf("unexpected env var: %s", uncheckedVars)}
+	// }
 
 	return config, nil
 }
 
 func getContainer(containers []corev1.Container, name string) *corev1.Container {
 	for _, container := range containers {
+		if container.Name == name {
+			return &container
+		}
+	}
+	return nil
+}
+
+func getContainers(spec corev1.PodSpec, name string) *corev1.Container {
+	for _, container := range spec.Containers {
+		if container.Name == name {
+			return &container
+		}
+	}
+	for _, container := range spec.InitContainers {
 		if container.Name == name {
 			return &container
 		}

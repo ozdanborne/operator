@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -55,11 +56,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var log = logf.Log.WithName("controller_installation")
 var openshiftNetworkConfig = "cluster"
 
 // Add creates a new Installation Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -139,7 +138,7 @@ func add(mgr manager.Manager, r *ReconcileInstallation) error {
 	if r.amazonCRDExists {
 		err = c.Watch(&source.Kind{Type: &operatorv1beta1.AmazonCloudIntegration{}}, &handler.EnqueueRequestForObject{})
 		if err != nil {
-			log.V(5).Info("Failed to create AmazonCloudIntegration watch", "err", err)
+			log.Printf("Failed to create AmazonCloudIntegration watch", "err", err)
 			return fmt.Errorf("amazoncloudintegration-controller failed to watch primary resource: %v", err)
 		}
 	}
