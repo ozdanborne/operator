@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 
+	"gopkg.in/yaml.v2"
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/tigera/operator/pkg/controller/migration/parser"
@@ -39,7 +39,7 @@ func run() error {
 		return fmt.Errorf("no install detected")
 	}
 
-	bits, err := json.Marshal(cfg)
+	bits, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}

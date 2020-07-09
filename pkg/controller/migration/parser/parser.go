@@ -22,10 +22,14 @@ var ctx = context.Background()
 
 // Config represents the configuration pulled from the existing install.
 type Config struct {
-	AutoDetectionMethod *operatorv1.NodeAddressAutodetection
-	MTU                 *int32
-	FelixEnvVars        []corev1.EnvVar
-	CNIConfig           string
+	operatorv1.Installation
+
+	// The following fields are not yet exposed in the
+	// operator API, and serve as a temporary store during prototyping.
+	// The goal is to eventually remove them all and remove this type,
+	// using operatorv1.Installation directly.
+	FelixEnvVars []corev1.EnvVar
+	CNIConfig    string
 }
 
 // ErrIncompatibleCluster is thrown if a config option was detected in the existing install

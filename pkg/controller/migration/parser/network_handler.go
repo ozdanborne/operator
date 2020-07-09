@@ -75,7 +75,9 @@ func (c *components) handleNetwork(cfg *Config) error {
 		// TODO: dear god clean this up what is wrong with you
 		i := intstr.FromString(*mtu)
 		iv := int32(i.IntValue())
-		cfg.MTU = &iv
+		cfg.Spec.CalicoNetwork = &operatorv1.CalicoNetworkSpec{
+			MTU: &iv,
+		}
 	}
 
 	return nil

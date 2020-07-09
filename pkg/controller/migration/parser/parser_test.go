@@ -55,7 +55,7 @@ var _ = Describe("Parser", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 		exp := int32(24)
-		Expect(cfg.MTU).To(Equal(&exp))
+		Expect(cfg.Spec.CalicoNetwork.MTU).To(Equal(&exp))
 	})
 
 	It("should fail on invalid cni", func() {
