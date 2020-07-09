@@ -48,13 +48,10 @@ type checkedFields struct {
 }
 
 type components struct {
-	// TODO: if we keep these as apimachinery structs, we can't
-	// add custom fields to indicate if fields were checked.
-	node            RaemonSet
+	node            CheckedDaemonSet
 	kubeControllers appsv1.Deployment
 	typha           appsv1.Deployment
 	client          client.Client
-	checkedVars     map[string]bool
 }
 
 func getComponents(ctx context.Context, client client.Client) (*components, error) {
@@ -85,7 +82,7 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 
 	return &components{
 		client: client,
-		node: RaemonSet{
+		node: CheckedDaemonSet{
 			ds,
 			map[string]checkedFields{},
 		},
