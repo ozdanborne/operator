@@ -5,6 +5,7 @@ package parser
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	operatorv1 "github.com/tigera/operator/pkg/apis/operator/v1"
@@ -114,11 +115,11 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 		return nil, err
 	}
 
-	// uncheckedVars := comps.node.uncheckedVars()
-	// // go back through the list at the end to make sure we checked everything.
-	// if len(uncheckedVars) != 0 {
-	// 	return nil, ErrIncompatibleCluster{fmt.Sprintf("unexpected env var: %s", uncheckedVars)}
-	// }
+	uncheckedVars := comps.node.uncheckedVars()
+	// go back through the list at the end to make sure we checked everything.
+	if len(uncheckedVars) != 0 {
+		return nil, ErrIncompatibleCluster{fmt.Sprintf("unexpected env var: %s", uncheckedVars)}
+	}
 
 	return config, nil
 }

@@ -44,6 +44,17 @@ var _ = Describe("Parser", func() {
 		Expect(cfg).ToNot(BeNil())
 	})
 
+	It("should error for unchecked env vars", func() {
+		node := emptyNodeSpec()
+		node.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{{
+			Name:  "FOO",
+			Value: "bar",
+		}}
+		c := fake.NewFakeClient(node, emptyKubeControllerSpec())
+		_, err := parser.GetExistingConfig(ctx, c)
+		Expect(err).To(HaveOccurred())
+	})
+
 	It("should detect an MTU", func() {
 		ds := emptyNodeSpec()
 		ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{{
