@@ -107,11 +107,11 @@ func GetExistingConfig(ctx context.Context, client client.Client) (*Config, erro
 		return nil, err
 	}
 
-	if err := comps.handleNetwork(config); err != nil {
+	if err := handleNetwork(comps, config); err != nil {
 		return nil, err
 	}
 
-	if err := comps.handleCore(config); err != nil {
+	if err := handleCore(comps, config); err != nil {
 		return nil, err
 	}
 

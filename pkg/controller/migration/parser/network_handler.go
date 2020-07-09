@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func (c *components) handleNetwork(cfg *Config) error {
+func handleNetwork(c *components, cfg *Config) error {
 	// CALICO_NETWORKING_BACKEND
 	netBackend, err := c.node.getEnv(ctx, c.client, "calico-node", "CALICO_NETWORKING_BACKEND")
 	if err != nil {

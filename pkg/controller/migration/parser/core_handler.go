@@ -1,6 +1,6 @@
 package parser
 
-func (c *components) handleCore(*Config) error {
+func handleCore(c *components, cfg *Config) error {
 	dsType, err := c.node.getEnv(ctx, c.client, "calico-node", "DATASTORE_TYPE")
 	if err != nil {
 		return err
