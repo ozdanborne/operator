@@ -5,11 +5,7 @@ package parser
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
-	"strings"
 
 	operatorv1 "github.com/tigera/operator/pkg/apis/operator/v1"
 
@@ -19,7 +15,6 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -41,45 +36,6 @@ type ErrIncompatibleCluster struct {
 
 func (e ErrIncompatibleCluster) Error() string {
 	return e.err
-}
-
-type RaemonSet struct {
-	appsv1.DaemonSet
-
-	checkedVars map[string]checkedFields
-}
-
-func (r *RaemonSet) uncheckedVars() []string {
-	unchecked := []string{}
-
-	for _, t := range r.Spec.Template.Spec.Containers {
-		for _, v := range t.Env {
-
-			if _, ok := r.checkedVars[t.Name].envVars[v.Name]; !ok {
-				unchecked = append(unchecked, t.Name+"/"+v.Name)
-			}
-		}
-	}
-	return unchecked
-}
-
-// getEnv gets the value of an environment variable and marks that it has been checked.
-func (r *RaemonSet) getEnv(ctx context.Context, client client.Client, container string, key string) (*string, error) {
-	c := getContainers(r.Spec.Template.Spec, container)
-	if c == nil {
-		return nil, ErrIncompatibleCluster{fmt.Sprintf("couldn't find %s container in existing calico-node daemonset", container)}
-	}
-	r.ignoreEnv(container, key)
-	return getEnv(ctx, client, c.Env, key)
-}
-
-func (r *RaemonSet) ignoreEnv(container, key string) {
-	if _, ok := r.checkedVars[container]; !ok {
-		r.checkedVars[container] = checkedFields{
-			map[string]bool{},
-		}
-	}
-	r.checkedVars[container].envVars[key] = true
 }
 
 type checkedFields struct {
@@ -132,95 +88,6 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 		// typha:           t,
 
 	}, nil
-}
-
-func (c *components) handleCore(*Config) error {
-	dsType, err := c.node.getEnv(ctx, c.client, "calico-node", "DATASTORE_TYPE")
-	if err != nil {
-		return err
-	}
-	if dsType != nil && *dsType != "kubernetes" {
-		return ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
-	}
-
-	// mark other variables as ignored
-	c.node.ignoreEnv("calico-node", "WAIT_FOR_DATASTORE")
-	c.node.ignoreEnv("calico-node", "CLUSTER_TYPE")
-	c.node.ignoreEnv("calico-node", "NODENAME")
-	c.node.ignoreEnv("calico-node", "CALICO_DISABLE_FILE_LOGGING")
-
-	return nil
-}
-
-func (c *components) handleNetwork(cfg *Config) error {
-	// CALICO_NETWORKING_BACKEND
-	netBackend, err := c.node.getEnv(ctx, c.client, "calico-node", "CALICO_NETWORKING_BACKEND")
-	if err != nil {
-		return err
-	}
-	if netBackend != nil && *netBackend != "" && *netBackend != "bird" {
-		return ErrIncompatibleCluster{"only CALICO_NETWORKING_BACKEND=bird is supported at this time"}
-	}
-
-	// FELIX_DEFAULTENDPOINTTOHOSTACTION
-	defaultWepAction, err := c.node.getEnv(ctx, c.client, "calico-node", "FELIX_DEFAULTENDPOINTTOHOSTACTION")
-	if err != nil {
-		return err
-	}
-	if defaultWepAction != nil && strings.ToLower(*defaultWepAction) != "accept" {
-		return ErrIncompatibleCluster{
-			fmt.Sprintf("unexpected FELIX_DEFAULTENDPOINTTOHOSTACTION: '%s'. Only 'accept' is supported.", *defaultWepAction),
-		}
-	}
-
-	ipMethod, err := c.node.getEnv(ctx, c.client, "calico-node", "IP")
-	if err != nil {
-		return err
-	}
-	if ipMethod != nil && strings.ToLower(*ipMethod) != "autodetect" {
-		return ErrIncompatibleCluster{
-			fmt.Sprintf("unexpected IP value: '%s'. Only 'autodetect' is supported.", *ipMethod),
-		}
-	}
-
-	// am, err := getEnvVar(ctx, c.client, node.Env, "IP_AUTODETECTION_METHOD")
-	// if err != nil {
-	// 	return err
-	// }
-	// tam, err := getAutoDetection(am)
-	// if err != nil {
-	// 	return err
-	// }
-	// config.AutoDetectionMethod = &tam
-
-	// case "CALICO_IPV4POOL_IPIP", "CALICO_IPV4POOL_VXLAN":
-	// 	// TODO
-	// 	checkedVars[v.Name] = true
-
-	cniConfig, err := c.node.getEnv(ctx, c.client, "install-cni", "CNI_NETWORK_CONFIG")
-	if err != nil {
-		return err
-	}
-	if cniConfig != nil {
-		var cni map[string]interface{}
-		bits := []byte(*cniConfig)
-		if err := json.Unmarshal(bits, &cni); err != nil {
-			return err
-		}
-	}
-
-	mtu, err := c.node.getEnv(ctx, c.client, "install-cni", "CNI_MTU")
-	if err != nil {
-		return err
-	}
-	if mtu != nil {
-		// TODO: dear god clean this up what is wrong with you
-		i := intstr.FromString(*mtu)
-		iv := int32(i.IntValue())
-		cfg.MTU = &iv
-	}
-
-	return nil
 }
 
 func GetExistingConfig(ctx context.Context, client client.Client) (*Config, error) {
@@ -307,44 +174,4 @@ func getEnvVar(ctx context.Context, client client.Client, e corev1.EnvVar) (stri
 
 	// TODO: support secretRef, fieldRef, and resourceFieldRef
 	return "", ErrIncompatibleCluster{"only configMapRef & explicit values supported for env vars at this time"}
-}
-
-// autoDetectCIDR auto-detects the IP and Network using the requested
-// detection method.
-func getAutoDetection(method string) (operatorv1.NodeAddressAutodetection, error) {
-	const (
-		AUTODETECTION_METHOD_FIRST          = "first-found"
-		AUTODETECTION_METHOD_CAN_REACH      = "can-reach="
-		AUTODETECTION_METHOD_INTERFACE      = "interface="
-		AUTODETECTION_METHOD_SKIP_INTERFACE = "skip-interface="
-	)
-
-	if method == "" || method == AUTODETECTION_METHOD_FIRST {
-		// Autodetect the IP by enumerating all interfaces (excluding
-		// known internal interfaces).
-		var t = true
-		return operatorv1.NodeAddressAutodetection{FirstFound: &t}, nil
-	}
-
-	// For 'interface', autodetect the IP from the specified interface.
-	if strings.HasPrefix(method, AUTODETECTION_METHOD_INTERFACE) {
-		ifStr := strings.TrimPrefix(method, AUTODETECTION_METHOD_INTERFACE)
-		return operatorv1.NodeAddressAutodetection{Interface: ifStr}, nil
-	}
-
-	// For 'can-reach', autodetect the IP by connecting a UDP socket to a supplied address.
-	if strings.HasPrefix(method, AUTODETECTION_METHOD_CAN_REACH) {
-		dest := strings.TrimPrefix(method, AUTODETECTION_METHOD_CAN_REACH)
-		return operatorv1.NodeAddressAutodetection{CanReach: dest}, nil
-	}
-
-	// For 'skip', autodetect the Ip by enumerating all interfaces (excluding
-	// known internal interfaces and any interfaces whose name
-	// matches the given regexes).
-	if strings.HasPrefix(method, AUTODETECTION_METHOD_SKIP_INTERFACE) {
-		ifStr := strings.TrimPrefix(method, AUTODETECTION_METHOD_SKIP_INTERFACE)
-		return operatorv1.NodeAddressAutodetection{SkipInterface: ifStr}, nil
-	}
-
-	return operatorv1.NodeAddressAutodetection{}, errors.New("unrecognized option for AUTODETECTION_METHOD_SKIP_INTERFACE: " + method)
 }
