@@ -57,18 +57,38 @@ func handleNetwork(c *components, cfg *Config) error {
 		cfg.Spec.CalicoNetwork.NodeAddressAutodetectionV4 = &tam
 	}
 
-	// TODO: also get mtu from other sources
-	mtu, err := c.node.getEnv(ctx, c.client, containerInstallCNI, "CNI_MTU")
-	if err != nil {
-		return err
-	}
-	if mtu != nil {
+	if c.cniConfig.MTU == -1 {
+		// if MTU is -1, we can assume it was us who replaced it when doing initial CNI
+		// config loading. We need to pull it from the correct source
+		mtu, err := c.node.getEnv(ctx, c.client, containerInstallCNI, "CNI_MTU")
+		if err != nil {
+			return err
+		}
+		if mtu == nil {
+			return fmt.Errorf("couldn't detect MTU")
+		}
+
 		// TODO: dear god clean this up what is wrong with you
 		i := intstr.FromString(*mtu)
 		iv := int32(i.IntValue())
 		cfg.Spec.CalicoNetwork = &operatorv1.CalicoNetworkSpec{
 			MTU: &iv,
 		}
+	} else {
+		// user must have hardcoded their CNI instead of using our cni templating engine
+		mtu := int32(c.cniConfig.MTU)
+		cfg.Spec.CalicoNetwork.MTU = &mtu
+	}
+
+	// check other cni settings
+	if len(c.cniConfig.IPAM.IPv4Pools) != 0 {
+		return ErrIncompatibleCluster{"cni ipam ranges not suported"}
+	}
+	if c.cniConfig.FeatureControl.FloatingIPs {
+		return ErrIncompatibleCluster{"floating IPs not supported"}
+	}
+	if c.cniConfig.FeatureControl.IPAddrsNoIpam {
+		return ErrIncompatibleCluster{"IpAddrsNoIpam not supported"}
 	}
 
 	return nil

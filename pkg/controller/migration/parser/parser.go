@@ -10,6 +10,8 @@ import (
 
 	operatorv1 "github.com/tigera/operator/pkg/apis/operator/v1"
 
+	calicocni "github.com/projectcalico/cni-plugin/pkg/types"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -51,7 +53,10 @@ type components struct {
 	node            CheckedDaemonSet
 	kubeControllers appsv1.Deployment
 	typha           appsv1.Deployment
-	client          client.Client
+
+	cniConfig *calicocni.NetConf
+
+	client client.Client
 }
 
 func getComponents(ctx context.Context, client client.Client) (*components, error) {
@@ -80,7 +85,7 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 	// 	return nil, err
 	// }
 
-	return &components{
+	comps := &components{
 		client: client,
 		node: CheckedDaemonSet{
 			ds,
