@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -56,18 +55,6 @@ func handleNetwork(c *components, cfg *Config) error {
 			return err
 		}
 		cfg.Spec.CalicoNetwork.NodeAddressAutodetectionV4 = &tam
-	}
-
-	cniConfig, err := c.node.getEnv(ctx, c.client, containerInstallCNI, "CNI_NETWORK_CONFIG")
-	if err != nil {
-		return err
-	}
-	if cniConfig != nil {
-		var cni map[string]interface{}
-		bits := []byte(*cniConfig)
-		if err := json.Unmarshal(bits, &cni); err != nil {
-			return err
-		}
 	}
 
 	// TODO: also get mtu from other sources

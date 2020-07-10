@@ -107,6 +107,10 @@ func GetExistingInstallation(ctx context.Context, client client.Client) (*Config
 		return nil, err
 	}
 
+	if err := handleCNI(comps, config); err != nil {
+		return nil, err
+	}
+
 	if err := handleNetwork(comps, config); err != nil {
 		return nil, err
 	}
