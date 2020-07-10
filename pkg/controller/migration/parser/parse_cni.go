@@ -2,6 +2,8 @@ package parser
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"strings"
 
 	"github.com/containernetworking/cni/libcni"
@@ -14,6 +16,7 @@ func loadCNI(c *components) error {
 		return err
 	}
 	if cniConfig == nil {
+		log.Print("no CNI_NETWORK_CONFIG detected on node")
 		return nil
 	}
 
@@ -26,10 +29,16 @@ func loadCNI(c *components) error {
 	plugins := map[string]*libcni.NetworkConfig{}
 	for _, plugin := range conflist.Plugins {
 		if plugin.Network.Name == "calico" {
-			json.Unmarshal(plugin.Bytes, c.calicoCNIConfig)
+			if err := json.Unmarshal(plugin.Bytes, c.calicoCNIConfig); err != nil {
+				return err
+			}
 		} else {
 			plugins[plugin.Network.Name] = plugin
 		}
+	}
+
+	if c.calicoCNIConfig == nil {
+		return fmt.Errorf("shouldn't be nil")
 	}
 
 	return nil

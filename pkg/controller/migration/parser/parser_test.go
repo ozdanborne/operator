@@ -57,10 +57,10 @@ var _ = Describe("Parser", func() {
 
 	It("should detect an MTU", func() {
 		ds := emptyNodeSpec()
-		ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{{
+		ds.Spec.Template.Spec.InitContainers[0].Env = append(ds.Spec.Template.Spec.InitContainers[0].Env, corev1.EnvVar{
 			Name:  "CNI_MTU",
 			Value: "24",
-		}}
+		})
 		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
 		cfg, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
@@ -81,18 +81,13 @@ var _ = Describe("Parser", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("should parse cni", func() {
-		ds := emptyNodeSpec()
-		ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{{
-			Name:  "CNI_NETWORK_CONFIG",
-			Value: "{}",
-		}}
-
-		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
-		cfg, err := parser.GetExistingInstallation(ctx, c)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(cfg).ToNot(BeNil())
-	})
+	// It("should parse cni", func() {
+	// 	ds := emptyNodeSpec()
+	// 	c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
+	// 	cfg, err := parser.GetExistingInstallation(ctx, c)
+	// 	Expect(err).ToNot(HaveOccurred())
+	// 	Expect(cfg).ToNot(BeNil())
+	// })
 })
 
 func emptyNodeSpec() *appsv1.DaemonSet {
@@ -106,6 +101,10 @@ func emptyNodeSpec() *appsv1.DaemonSet {
 				Spec: corev1.PodSpec{
 					InitContainers: []corev1.Container{{
 						Name: "install-cni",
+						Env: []corev1.EnvVar{{
+							Name:  "CNI_NETWORK_CONFIG",
+							Value: defaultCNIConfig,
+						}},
 					}},
 					Containers: []corev1.Container{{
 						Name: "calico-node",
@@ -133,3 +132,20 @@ func emptyKubeControllerSpec() *appsv1.Deployment {
 		},
 	}
 }
+
+const defaultCNIConfig = `{
+"type": "calico",
+"log_level": "info",
+"datastore_type": "kubernetes",
+"nodename": "__KUBERNETES_NODE_NAME__",
+"mtu": __CNI_MTU__,
+"ipam": {
+	"type": "calico-ipam"
+},
+"policy": {
+	"type": "k8s"
+},
+"kubernetes": {
+	"kubeconfig": "__KUBECONFIG_FILEPATH__"
+}
+}`

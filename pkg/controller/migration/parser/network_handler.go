@@ -16,6 +16,11 @@ const (
 )
 
 func handleNetwork(c *components, cfg *Config) error {
+	// todo: be more elegant about creation of this spec field if it already exists
+	if cfg.Spec.CalicoNetwork == nil {
+		cfg.Spec.CalicoNetwork = &operatorv1.CalicoNetworkSpec{}
+	}
+
 	// CALICO_NETWORKING_BACKEND
 	netBackend, err := c.node.getEnv(ctx, c.client, containerCalicoNode, "CALICO_NETWORKING_BACKEND")
 	if err != nil {
@@ -92,9 +97,7 @@ func handleNetwork(c *components, cfg *Config) error {
 		// TODO: dear god clean this up what is wrong with you
 		i := intstr.FromString(*mtu)
 		iv := int32(i.IntValue())
-		cfg.Spec.CalicoNetwork = &operatorv1.CalicoNetworkSpec{
-			MTU: &iv,
-		}
+		cfg.Spec.CalicoNetwork.MTU = &iv
 	} else {
 		// user must have hardcoded their CNI instead of using our cni templating engine
 		mtu := int32(c.calicoCNIConfig.MTU)
