@@ -58,6 +58,8 @@ type components struct {
 	// other CNI plugin conf
 	pluginCNIConfig map[string]*libcni.NetworkConfig
 	// calico CNI conf
+	// TODO: is cni-private netconf different? is it ok to only use the OS one?
+	// TODO: where do cni config 'routes' & 'ranges' come into play between these datastructures?
 	calicoCNIConfig *calicocni.NetConf
 
 	client client.Client
@@ -190,6 +192,7 @@ func getEnvVar(ctx context.Context, client client.Client, e corev1.EnvVar) (stri
 		return v, nil
 	}
 
-	// TODO: support secretRef, fieldRef, and resourceFieldRef
+	// TODO: if we just need to check that a variable _is_ a secretRef, fieldRef, and resourceFieldRef,
+	// we'll need to add a different method.
 	return "", ErrIncompatibleCluster{"only configMapRef & explicit values supported for env vars at this time"}
 }
