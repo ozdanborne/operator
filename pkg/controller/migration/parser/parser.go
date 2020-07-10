@@ -92,7 +92,10 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 	}, nil
 }
 
-func GetExistingConfig(ctx context.Context, client client.Client) (*Config, error) {
+// GetExistingInstallation creates an Installation resource from an existing Calico install (i.e.
+// one that is not managed by operator). If the existing installation cannot be represented by an Installation
+// resource, an ErrIncompatibleCluster is returned.
+func GetExistingInstallation(ctx context.Context, client client.Client) (*Config, error) {
 	config := &Config{}
 
 	comps, err := getComponents(ctx, client)

@@ -242,7 +242,7 @@ func GetInstallation(ctx context.Context, client client.Client, provider operato
 		}
 	}
 
-	ei, err := parser.GetExistingConfig(ctx, client)
+	ei, err := parser.GetExistingInstallation(ctx, client)
 	if err != nil {
 		return nil, err
 	}

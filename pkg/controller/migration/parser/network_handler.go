@@ -10,9 +10,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const (
+	containerCalicoNode = "calico-node"
+	containerInstallCNI = "install-cni"
+)
+
 func handleNetwork(c *components, cfg *Config) error {
 	// CALICO_NETWORKING_BACKEND
-	netBackend, err := c.node.getEnv(ctx, c.client, "calico-node", "CALICO_NETWORKING_BACKEND")
+	netBackend, err := c.node.getEnv(ctx, c.client, containerCalicoNode, "CALICO_NETWORKING_BACKEND")
 	if err != nil {
 		return err
 	}
@@ -21,7 +26,7 @@ func handleNetwork(c *components, cfg *Config) error {
 	}
 
 	// FELIX_DEFAULTENDPOINTTOHOSTACTION
-	defaultWepAction, err := c.node.getEnv(ctx, c.client, "calico-node", "FELIX_DEFAULTENDPOINTTOHOSTACTION")
+	defaultWepAction, err := c.node.getEnv(ctx, c.client, containerCalicoNode, "FELIX_DEFAULTENDPOINTTOHOSTACTION")
 	if err != nil {
 		return err
 	}
@@ -31,7 +36,7 @@ func handleNetwork(c *components, cfg *Config) error {
 		}
 	}
 
-	ipMethod, err := c.node.getEnv(ctx, c.client, "calico-node", "IP")
+	ipMethod, err := c.node.getEnv(ctx, c.client, containerCalicoNode, "IP")
 	if err != nil {
 		return err
 	}
@@ -41,21 +46,19 @@ func handleNetwork(c *components, cfg *Config) error {
 		}
 	}
 
-	// am, err := getEnvVar(ctx, c.client, node.Env, "IP_AUTODETECTION_METHOD")
-	// if err != nil {
-	// 	return err
-	// }
-	// tam, err := getAutoDetection(am)
-	// if err != nil {
-	// 	return err
-	// }
-	// config.AutoDetectionMethod = &tam
+	am, err := c.node.getEnv(ctx, c.client, containerCalicoNode, "IP_AUTODETECTION_METHOD")
+	if err != nil {
+		return err
+	}
+	if am != nil {
+		tam, err := getAutoDetection(*am)
+		if err != nil {
+			return err
+		}
+		cfg.Spec.CalicoNetwork.NodeAddressAutodetectionV4 = &tam
+	}
 
-	// case "CALICO_IPV4POOL_IPIP", "CALICO_IPV4POOL_VXLAN":
-	// 	// TODO
-	// 	checkedVars[v.Name] = true
-
-	cniConfig, err := c.node.getEnv(ctx, c.client, "install-cni", "CNI_NETWORK_CONFIG")
+	cniConfig, err := c.node.getEnv(ctx, c.client, containerInstallCNI, "CNI_NETWORK_CONFIG")
 	if err != nil {
 		return err
 	}
@@ -67,7 +70,8 @@ func handleNetwork(c *components, cfg *Config) error {
 		}
 	}
 
-	mtu, err := c.node.getEnv(ctx, c.client, "install-cni", "CNI_MTU")
+	// TODO: also get mtu from other sources
+	mtu, err := c.node.getEnv(ctx, c.client, containerInstallCNI, "CNI_MTU")
 	if err != nil {
 		return err
 	}

@@ -20,7 +20,7 @@ var _ = Describe("Parser", func() {
 
 	It("should not detect an installation if none exists", func() {
 		c := fake.NewFakeClient()
-		config, err := parser.GetExistingConfig(ctx, c)
+		config, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(config).To(BeNil())
 	})
@@ -32,14 +32,14 @@ var _ = Describe("Parser", func() {
 				Namespace: "kube-system",
 			},
 		}, emptyKubeControllerSpec())
-		_, err := parser.GetExistingConfig(ctx, c)
+		_, err := parser.GetExistingInstallation(ctx, c)
 		// though it will detect an install, it will be in the form of an incompatible-cluster error
 		Expect(err).To(BeAssignableToTypeOf(parser.ErrIncompatibleCluster{}))
 	})
 
 	It("should detect a valid installation", func() {
 		c := fake.NewFakeClient(emptyNodeSpec(), emptyKubeControllerSpec())
-		cfg, err := parser.GetExistingConfig(ctx, c)
+		cfg, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 	})
@@ -51,7 +51,7 @@ var _ = Describe("Parser", func() {
 			Value: "bar",
 		}}
 		c := fake.NewFakeClient(node, emptyKubeControllerSpec())
-		_, err := parser.GetExistingConfig(ctx, c)
+		_, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -62,7 +62,7 @@ var _ = Describe("Parser", func() {
 			Value: "24",
 		}}
 		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
-		cfg, err := parser.GetExistingConfig(ctx, c)
+		cfg, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 		exp := int32(24)
@@ -77,7 +77,7 @@ var _ = Describe("Parser", func() {
 		}}
 
 		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
-		_, err := parser.GetExistingConfig(ctx, c)
+		_, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -89,7 +89,7 @@ var _ = Describe("Parser", func() {
 		}}
 
 		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
-		cfg, err := parser.GetExistingConfig(ctx, c)
+		cfg, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 	})
