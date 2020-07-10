@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/containernetworking/cni/libcni"
 	operatorv1 "github.com/tigera/operator/pkg/apis/operator/v1"
 
 	calicocni "github.com/projectcalico/cni-plugin/pkg/types"
@@ -54,7 +55,10 @@ type components struct {
 	kubeControllers appsv1.Deployment
 	typha           appsv1.Deployment
 
-	cniConfig *calicocni.NetConf
+	// other CNI plugin conf
+	pluginCNIConfig map[string]*libcni.NetworkConfig
+	// calico CNI conf
+	calicoCNIConfig *calicocni.NetConf
 
 	client client.Client
 }
@@ -94,7 +98,11 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 		kubeControllers: kc,
 		// typha:           t,
 
-	}, nil
+	}
+
+	err := loadCNI(comps)
+
+	return comps, err
 }
 
 // GetExistingInstallation creates an Installation resource from an existing Calico install (i.e.
@@ -109,10 +117,6 @@ func GetExistingInstallation(ctx context.Context, client client.Client) (*Config
 			log.Print("no existing install found: ", err)
 			return nil, nil
 		}
-		return nil, err
-	}
-
-	if err := handleCNI(comps, config); err != nil {
 		return nil, err
 	}
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	operatorv1 "github.com/tigera/operator/pkg/apis/operator/v1"
+	v1 "github.com/tigera/operator/pkg/apis/operator/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -57,7 +58,27 @@ func handleNetwork(c *components, cfg *Config) error {
 		cfg.Spec.CalicoNetwork.NodeAddressAutodetectionV4 = &tam
 	}
 
-	if c.cniConfig.MTU == -1 {
+	// check for portmap plugin
+	if _, ok := c.pluginCNIConfig["portmap"]; ok {
+		// can't take address of const's so copy it into a new var oiwjfeoiwapcj;eifj
+		hp := v1.HostPortsEnabled
+		cfg.Spec.CalicoNetwork.HostPorts = &hp
+	} else {
+		hp := v1.HostPortsDisabled
+		cfg.Spec.CalicoNetwork.HostPorts = &hp
+	}
+
+	// check for bandwidth plugin
+	if _, ok := c.pluginCNIConfig["bandwidth"]; ok {
+		return ErrIncompatibleCluster{"operator does not yet support bandwidth"}
+	}
+
+	if c.calicoCNIConfig == nil {
+		// TODO: don't return an error once we support this, instead just returning nil.
+		return ErrIncompatibleCluster{"operator does not yet support running without calico CNI"}
+	}
+
+	if c.calicoCNIConfig.MTU == -1 {
 		// if MTU is -1, we can assume it was us who replaced it when doing initial CNI
 		// config loading. We need to pull it from the correct source
 		mtu, err := c.node.getEnv(ctx, c.client, containerInstallCNI, "CNI_MTU")
@@ -76,18 +97,18 @@ func handleNetwork(c *components, cfg *Config) error {
 		}
 	} else {
 		// user must have hardcoded their CNI instead of using our cni templating engine
-		mtu := int32(c.cniConfig.MTU)
+		mtu := int32(c.calicoCNIConfig.MTU)
 		cfg.Spec.CalicoNetwork.MTU = &mtu
 	}
 
 	// check other cni settings
-	if len(c.cniConfig.IPAM.IPv4Pools) != 0 {
+	if len(c.calicoCNIConfig.IPAM.IPv4Pools) != 0 {
 		return ErrIncompatibleCluster{"cni ipam ranges not suported"}
 	}
-	if c.cniConfig.FeatureControl.FloatingIPs {
+	if c.calicoCNIConfig.FeatureControl.FloatingIPs {
 		return ErrIncompatibleCluster{"floating IPs not supported"}
 	}
-	if c.cniConfig.FeatureControl.IPAddrsNoIpam {
+	if c.calicoCNIConfig.FeatureControl.IPAddrsNoIpam {
 		return ErrIncompatibleCluster{"IpAddrsNoIpam not supported"}
 	}
 
