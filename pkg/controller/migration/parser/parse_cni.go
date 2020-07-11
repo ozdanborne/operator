@@ -28,8 +28,8 @@ func loadCNI(c *components) error {
 	// convert to a map for simpler checks
 	plugins := map[string]*libcni.NetworkConfig{}
 	for _, plugin := range conflist.Plugins {
-		if plugin.Network.Name == "calico" {
-			if err := json.Unmarshal(plugin.Bytes, c.calicoCNIConfig); err != nil {
+		if plugin.Network.Type == "calico" {
+			if err := json.Unmarshal(plugin.Bytes, &c.calicoCNIConfig); err != nil {
 				return err
 			}
 		} else {
@@ -38,7 +38,7 @@ func loadCNI(c *components) error {
 	}
 
 	if c.calicoCNIConfig == nil {
-		return fmt.Errorf("shouldn't be nil")
+		return fmt.Errorf("no 'calico' cni conf found in CNI_NETWORK_CONFIG on install-cni")
 	}
 
 	return nil

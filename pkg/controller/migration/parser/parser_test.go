@@ -20,9 +20,7 @@ var _ = Describe("Parser", func() {
 
 	It("should not detect an installation if none exists", func() {
 		c := fake.NewFakeClient()
-		config, err := parser.GetExistingInstallation(ctx, c)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(config).To(BeNil())
+		Expect(parser.GetExistingInstallation(ctx, c)).To(BeNil())
 	})
 
 	It("should detect an installation if one exists", func() {
@@ -39,9 +37,7 @@ var _ = Describe("Parser", func() {
 
 	It("should detect a valid installation", func() {
 		c := fake.NewFakeClient(emptyNodeSpec(), emptyKubeControllerSpec())
-		cfg, err := parser.GetExistingInstallation(ctx, c)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(cfg).ToNot(BeNil())
+		Expect(parser.GetExistingInstallation(ctx, c)).ToNot(BeNil())
 	})
 
 	It("should error for unchecked env vars", func() {
@@ -57,10 +53,17 @@ var _ = Describe("Parser", func() {
 
 	It("should detect an MTU", func() {
 		ds := emptyNodeSpec()
-		ds.Spec.Template.Spec.InitContainers[0].Env = append(ds.Spec.Template.Spec.InitContainers[0].Env, corev1.EnvVar{
-			Name:  "CNI_MTU",
-			Value: "24",
-		})
+		ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{
+			{
+				Name:  "CNI_MTU",
+				Value: "24",
+			},
+			{
+				Name:  "CNI_NETWORK_CONFIG",
+				Value: `{"type": "calico", "mtu": __CNI_MTU__}`,
+			},
+		}
+
 		c := fake.NewFakeClient(ds, emptyKubeControllerSpec())
 		cfg, err := parser.GetExistingInstallation(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
@@ -103,7 +106,7 @@ func emptyNodeSpec() *appsv1.DaemonSet {
 						Name: "install-cni",
 						Env: []corev1.EnvVar{{
 							Name:  "CNI_NETWORK_CONFIG",
-							Value: defaultCNIConfig,
+							Value: `{"type": "calico"}`,
 						}},
 					}},
 					Containers: []corev1.Container{{
@@ -132,20 +135,3 @@ func emptyKubeControllerSpec() *appsv1.Deployment {
 		},
 	}
 }
-
-const defaultCNIConfig = `{
-"type": "calico",
-"log_level": "info",
-"datastore_type": "kubernetes",
-"nodename": "__KUBERNETES_NODE_NAME__",
-"mtu": __CNI_MTU__,
-"ipam": {
-	"type": "calico-ipam"
-},
-"policy": {
-	"type": "k8s"
-},
-"kubernetes": {
-	"kubeconfig": "__KUBECONFIG_FILEPATH__"
-}
-}`
