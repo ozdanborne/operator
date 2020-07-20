@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"time"
@@ -30,6 +29,9 @@ import (
 	operatorv1beta1 "github.com/tigera/operator/pkg/apis/operator/v1beta1"
 	"github.com/tigera/operator/pkg/controller/migration"
 	"github.com/tigera/operator/pkg/controller/migration/convert"
+	"github.com/tigera/operator/pkg/controller/migration/defaults"
+	"github.com/tigera/operator/pkg/controller/migration/kubeadm"
+	"github.com/tigera/operator/pkg/controller/migration/openshift"
 	"github.com/tigera/operator/pkg/controller/options"
 	"github.com/tigera/operator/pkg/controller/status"
 	"github.com/tigera/operator/pkg/controller/utils"
@@ -39,15 +41,12 @@ import (
 
 	"github.com/go-logr/logr"
 	apps "k8s.io/api/apps/v1"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -214,206 +213,46 @@ func GetInstallation(ctx context.Context, client client.Client, provider operato
 }
 
 // GetInstallation returns the default installation instance with defaults populated.
-func getInstallation(ctx context.Context, client client.Client, provider operator.Provider, c migration.Converter) (*operator.Installation, error) {
-	// Fetch the Installation instance. We only support a single instance named "default".
-	instance := &operator.Installation{}
-	err := client.Get(ctx, utils.DefaultInstanceKey, instance)
+func getInstallation(ctx context.Context, client client.Client, provider operator.Provider) (*operator.Installation, error) {
+	instance, err := GetInstallation(ctx, client, provider)
 	if err != nil {
 		return nil, err
-	}
-
-	// grab existing install
-	i, err := c.Convert()
-	if err != nil {
-		return nil, err
-	}
-
-	if i != nil {
-		// TODO: verify that user-specified values are compatible with detected values.
-		i.Spec.DeepCopyInto(&instance.Spec)
 	}
 
 	// Determine the provider in use by combining any auto-detected value with any value
 	// specified in the Installation CR. mergeProvider updates the CR with the correct value.
-	err = mergeProvider(instance, provider)
-	if err != nil {
+	if err := mergeProvider(instance, provider); err != nil {
 		return nil, err
 	}
 
-	var openshiftConfig *configv1.Network
-	var kubeadmConfig *v1.ConfigMap
-	if instance.Spec.KubernetesProvider == operator.ProviderOpenShift {
-		openshiftConfig = &configv1.Network{}
-		// If configured to run in openshift, then also fetch the openshift configuration API.
-		err = client.Get(ctx, types.NamespacedName{Name: openshiftNetworkConfig}, openshiftConfig)
-		if err != nil {
-			return nil, fmt.Errorf("Unable to read openshift network configuration: %s", err.Error())
-		}
-	} else {
-		// Check if we're running on kubeadm by getting the config map.
-		kubeadmConfig = &v1.ConfigMap{}
-		key := types.NamespacedName{Name: kubeadmConfigMap, Namespace: metav1.NamespaceSystem}
-		err = client.Get(ctx, key, kubeadmConfig)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return nil, fmt.Errorf("Unable to read kubeadm config map: %s", err.Error())
-			}
-			kubeadmConfig = nil
-		}
-	}
-
-	err = mergeAndFillDefaults(instance, openshiftConfig, kubeadmConfig)
-	if err != nil {
+	// merge existing config
+	if err := convert.Convert(ctx, client, instance); err != nil {
 		return nil, err
 	}
+
+	if err := mergeAndFillDefaults(ctx, client, instance); err != nil {
+		return nil, err
+	}
+
 	return instance, nil
 }
 
 // mergeAndFillDefaults merges in configuration from the Kubernetes provider, if applicable, and then
 // populates defaults in the Installation instance.
-func mergeAndFillDefaults(i *operator.Installation, o *configv1.Network, kubeadmConfig *v1.ConfigMap) error {
-	if o != nil {
-		// Merge in OpenShift configuration.
-		if err := updateInstallationForOpenshiftNetwork(i, o); err != nil {
-			return fmt.Errorf("Could not resolve CalicoNetwork IPPool and OpenShift network: %s", err.Error())
-		}
-	} else if kubeadmConfig != nil {
-		// Merge in kubeadm configuraiton.
-		if err := updateInstallationForKubeadm(i, kubeadmConfig); err != nil {
-			return fmt.Errorf("Could not resolve CalicoNetwork IPPool and kubeadm configuration: %s", err.Error())
-		}
+func mergeAndFillDefaults(ctx context.Context, client client.Client, instance *operator.Installation) error {
+	// merge openshift
+	if err := openshift.Convert(ctx, client, instance); err != nil {
+		return err
 	}
 
-	return fillDefaults(i)
-}
-
-// fillDefaults populates the default values onto an Installation object.
-func fillDefaults(instance *operator.Installation) error {
-	// Populate the instance with defaults for any fields not provided by the user.
-	if len(instance.Spec.Registry) != 0 && !strings.HasSuffix(instance.Spec.Registry, "/") {
-		// Make sure registry always ends with a slash.
-		instance.Spec.Registry = fmt.Sprintf("%s/", instance.Spec.Registry)
+	// merge kubeadm
+	if err := kubeadm.Convert(ctx, client, instance); err != nil {
+		return err
 	}
 
-	if len(instance.Spec.Variant) == 0 {
-		// Default to installing Calico.
-		instance.Spec.Variant = operator.Calico
-	}
-
-	// Based on the Kubernetes provider, we may or may not need to default to using Calico networking.
-	// For managed clouds, we use the cloud provided networking. For other platforms, use Calico networking.
-	switch instance.Spec.KubernetesProvider {
-	case operator.ProviderAKS, operator.ProviderEKS, operator.ProviderGKE:
-		if instance.Spec.CalicoNetwork != nil {
-			// For these platforms, it's an error to have CalicoNetwork set.
-			msg := "Installation spec.calicoNetwork must not be set for provider %s"
-			return fmt.Errorf(msg, instance.Spec.KubernetesProvider)
-		}
-	default:
-		if instance.Spec.CalicoNetwork == nil {
-			// For all other platforms, default to using Calico networking.
-			instance.Spec.CalicoNetwork = &operator.CalicoNetworkSpec{}
-		}
-	}
-
-	var v4pool, v6pool *operator.IPPool
-
-	// If Calico networking is in use, then default some fields.
-	if instance.Spec.CalicoNetwork != nil {
-		// Default IP pools, only if it is nil.
-		// If it is an empty slice then that means no default IPPools
-		// should be created.
-		if instance.Spec.CalicoNetwork.IPPools == nil {
-			instance.Spec.CalicoNetwork.IPPools = []operator.IPPool{
-				operator.IPPool{CIDR: "192.168.0.0/16"},
-			}
-		}
-
-		v4pool = render.GetIPv4Pool(instance.Spec.CalicoNetwork)
-		v6pool = render.GetIPv6Pool(instance.Spec.CalicoNetwork)
-
-		if v4pool != nil {
-			if v4pool.Encapsulation == "" {
-				v4pool.Encapsulation = operator.EncapsulationDefault
-			}
-			if v4pool.NATOutgoing == "" {
-				v4pool.NATOutgoing = operator.NATOutgoingEnabled
-			}
-			if v4pool.NodeSelector == "" {
-				v4pool.NodeSelector = operator.NodeSelectorDefault
-			}
-			if instance.Spec.CalicoNetwork.NodeAddressAutodetectionV4 == nil {
-				// Default IPv4 address detection to "first found" if not specified.
-				t := true
-				instance.Spec.CalicoNetwork.NodeAddressAutodetectionV4 = &operator.NodeAddressAutodetection{
-					FirstFound: &t,
-				}
-			}
-			if v4pool.BlockSize == nil {
-				var twentySix int32 = 26
-				v4pool.BlockSize = &twentySix
-			}
-		}
-
-		if v6pool != nil {
-			if v6pool.Encapsulation == "" {
-				v6pool.Encapsulation = operator.EncapsulationNone
-			}
-			if v6pool.NATOutgoing == "" {
-				v6pool.NATOutgoing = operator.NATOutgoingDisabled
-			}
-			if v6pool.NodeSelector == "" {
-				v6pool.NodeSelector = operator.NodeSelectorDefault
-			}
-			if instance.Spec.CalicoNetwork.NodeAddressAutodetectionV6 == nil {
-				// Default IPv6 address detection to "first found" if not specified.
-				t := true
-				instance.Spec.CalicoNetwork.NodeAddressAutodetectionV6 = &operator.NodeAddressAutodetection{
-					FirstFound: &t,
-				}
-			}
-			if v6pool.BlockSize == nil {
-				var oneTwentyTwo int32 = 122
-				v6pool.BlockSize = &oneTwentyTwo
-			}
-		}
-
-		if instance.Spec.CalicoNetwork.HostPorts == nil {
-			hp := operator.HostPortsEnabled
-			instance.Spec.CalicoNetwork.HostPorts = &hp
-		}
-
-		if instance.Spec.CalicoNetwork.MultiInterfaceMode == nil {
-			mm := operator.MultiInterfaceModeNone
-			instance.Spec.CalicoNetwork.MultiInterfaceMode = &mm
-		}
-	}
-
-	// If not specified by the user, set the flex volume plugin location based on platform.
-	if len(instance.Spec.FlexVolumePath) == 0 {
-		if instance.Spec.KubernetesProvider == operator.ProviderOpenShift {
-			// In OpenShift 4.x, the location for flexvolume plugins has changed.
-			// See: https://bugzilla.redhat.com/show_bug.cgi?id=1667606#c5
-			instance.Spec.FlexVolumePath = "/etc/kubernetes/kubelet-plugins/volume/exec/"
-		} else if instance.Spec.KubernetesProvider == operator.ProviderGKE {
-			instance.Spec.FlexVolumePath = "/home/kubernetes/flexvolume/"
-		} else if instance.Spec.KubernetesProvider == operator.ProviderAKS {
-			instance.Spec.FlexVolumePath = "/etc/kubernetes/volumeplugins/"
-		} else {
-			instance.Spec.FlexVolumePath = "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/"
-		}
-	}
-
-	instance.Spec.NodeUpdateStrategy.Type = appsv1.RollingUpdateDaemonSetStrategyType
-
-	var one = intstr.FromInt(1)
-
-	if instance.Spec.NodeUpdateStrategy.RollingUpdate == nil {
-		instance.Spec.NodeUpdateStrategy.RollingUpdate = &apps.RollingUpdateDaemonSet{
-			MaxUnavailable: &one,
-		}
-	} else if instance.Spec.NodeUpdateStrategy.RollingUpdate.MaxUnavailable == nil {
-		instance.Spec.NodeUpdateStrategy.RollingUpdate.MaxUnavailable = &one
+	// fill in all remaining defaults
+	if err := defaults.Convert(ctx, client, instance); err != nil {
+		return err
 	}
 
 	return nil
@@ -459,10 +298,8 @@ func (r *ReconcileInstallation) Reconcile(request reconcile.Request) (reconcile.
 	// mark CR found so we can report converter problems via tigerastatus
 	r.status.OnCRFound()
 
-	c := convert.Converter{r.client}
-
 	// Query for the installation object.
-	instance, err := getInstallation(ctx, r.client, r.autoDetectedProvider, c)
+	instance, err := getInstallation(ctx, r.client, r.autoDetectedProvider)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -873,111 +710,4 @@ func isOpenshiftOnAws(install *operator.Installation, ctx context.Context, clien
 		return false, fmt.Errorf("Unable to read OpenShift infrastructure configuration: %s", err.Error())
 	}
 	return (infra.Status.Platform == "AWS"), nil
-}
-
-func updateInstallationForOpenshiftNetwork(i *operator.Installation, o *configv1.Network) error {
-	if i.Spec.CalicoNetwork == nil {
-		i.Spec.CalicoNetwork = &operator.CalicoNetworkSpec{}
-	}
-
-	platformCIDRs := []string{}
-	for _, c := range o.Spec.ClusterNetwork {
-		platformCIDRs = append(platformCIDRs, c.CIDR)
-	}
-	return mergePlatformPodCIDRs(i, platformCIDRs)
-}
-
-func updateInstallationForKubeadm(i *operator.Installation, c *v1.ConfigMap) error {
-	if i.Spec.CalicoNetwork == nil {
-		i.Spec.CalicoNetwork = &operator.CalicoNetworkSpec{}
-	}
-
-	platformCIDRs, err := extractKubeadmCIDRs(c)
-	if err != nil {
-		return err
-	}
-	return mergePlatformPodCIDRs(i, platformCIDRs)
-}
-
-func mergePlatformPodCIDRs(i *operator.Installation, platformCIDRs []string) error {
-	// If IPPools is nil, add IPPool with CIDRs detected from platform configuration.
-	if i.Spec.CalicoNetwork.IPPools == nil {
-		if len(platformCIDRs) == 0 {
-			// If the platform has no CIDRs defined as well, then return and let the
-			// normal defaulting happen.
-			return nil
-		}
-		v4found := false
-		v6found := false
-
-		// Currently we only support a single IPv4 and a single IPv6 CIDR configured via the operator.
-		// So, grab the 1st IPv4 and IPv6 cidrs we find and use those. This will allow the
-		// operator to work in situations where there are more than one of each.
-		for _, c := range platformCIDRs {
-			addr, _, err := net.ParseCIDR(c)
-			if err != nil {
-				log.Error(err, "Failed to parse platform's pod network CIDR.")
-				continue
-			}
-
-			if addr.To4() == nil {
-				if v6found {
-					continue
-				}
-				v6found = true
-				i.Spec.CalicoNetwork.IPPools = append(i.Spec.CalicoNetwork.IPPools,
-					operator.IPPool{CIDR: c})
-			} else {
-				if v4found {
-					continue
-				}
-				v4found = true
-				i.Spec.CalicoNetwork.IPPools = append(i.Spec.CalicoNetwork.IPPools,
-					operator.IPPool{CIDR: c})
-			}
-			if v6found && v4found {
-				break
-			}
-		}
-	} else if len(i.Spec.CalicoNetwork.IPPools) == 0 {
-		// Empty IPPools list so nothing to do.
-		return nil
-	} else {
-		// Pools are configured on the Installation. Make sure they are compatible with
-		// the configuration set in the underlying Kubernetes platform.
-		for _, pool := range i.Spec.CalicoNetwork.IPPools {
-			within := false
-			for _, c := range platformCIDRs {
-				within = within || cidrWithinCidr(c, pool.CIDR)
-			}
-			if !within {
-				return fmt.Errorf("IPPool %v is not within the platform's configured pod network CIDR(s)", pool.CIDR)
-			}
-		}
-	}
-	return nil
-}
-
-// cidrWithinCidr checks that all IPs in the pool passed in are within the
-// passed in CIDR
-func cidrWithinCidr(cidr, pool string) bool {
-	_, cNet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return false
-	}
-	_, pNet, err := net.ParseCIDR(pool)
-	if err != nil {
-		return false
-	}
-	ipMin := pNet.IP
-	pOnes, _ := pNet.Mask.Size()
-	cOnes, _ := cNet.Mask.Size()
-
-	// If the cidr contains the network (1st) address of the pool and the
-	// prefix on the pool is larger than or equal to the cidr prefix (the pool size is
-	// smaller than the cidr) then the pool network is within the cidr network.
-	if cNet.Contains(ipMin) && pOnes >= cOnes {
-		return true
-	}
-	return false
 }
