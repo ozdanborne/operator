@@ -131,6 +131,14 @@ func handleCalicoCNI(c *components, install *Installation) error {
 		return ErrIncompatibleCluster{"IpAddrsNoIpam not supported"}
 	}
 
+	cniConfName, err := c.node.getEnv(ctx, c.client, containerInstallCNI, "CNI_CONF_NAME")
+	if err != nil {
+		return err
+	}
+	if cniConfName != nil && *cniConfName != "10-calico.conflist" {
+		return ErrIncompatibleCluster{"custom cni conf name not supported. must use '10-calico.conflist'"}
+	}
+
 	return nil
 }
 
