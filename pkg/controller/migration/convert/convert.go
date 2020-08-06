@@ -42,7 +42,7 @@ type checkedFields struct {
 
 type components struct {
 	node            CheckedDaemonSet
-	kubeControllers *appsv1.Deployment
+	kubeControllers *CheckedDeployment
 	typha           *appsv1.Deployment
 
 	// Calico CNI conf
@@ -61,23 +61,30 @@ type components struct {
 
 // getComponents loads the main calico components into structs for later parsing.
 func getComponents(ctx context.Context, client client.Client) (*components, error) {
-	var ds = appsv1.DaemonSet{}
 
 	// verify canal isn't present, or block
 	if err := client.Get(ctx, types.NamespacedName{
 		Name:      "canal-node",
 		Namespace: metav1.NamespaceSystem,
-	}, &ds); err == nil {
+	}, &appsv1.DaemonSet{}); err == nil {
 		return nil, fmt.Errorf("detected existing canal installation")
 	} else if !errors.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to check for existing canal installation: %v", err)
 	}
 
+	comps := &components{
+		client: client,
+	}
+	var ds = appsv1.DaemonSet{}
 	if err := client.Get(ctx, types.NamespacedName{
 		Name:      "calico-node",
 		Namespace: metav1.NamespaceSystem,
 	}, &ds); err != nil {
 		return nil, err
+	}
+	comps.node = CheckedDaemonSet{
+		ds,
+		map[string]checkedFields{},
 	}
 
 	var kc = new(appsv1.Deployment)
@@ -89,7 +96,11 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 			return nil, fmt.Errorf("failed to get kube-controllers deployment: %v", err)
 		}
 		log.Print("did not detect kube-controllers")
-		kc = nil
+	} else {
+		comps.kubeControllers = &CheckedDeployment{
+			*kc,
+			map[string]checkedFields{},
+		}
 	}
 
 	var t = new(appsv1.Deployment)
@@ -102,17 +113,8 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 		}
 		// typha is optional, so just log.
 		log.Print("did not detect typha")
-		t = nil
-	}
-
-	comps := &components{
-		client: client,
-		node: CheckedDaemonSet{
-			ds,
-			map[string]checkedFields{},
-		},
-		kubeControllers: kc,
-		typha:           t,
+	} else {
+		comps.typha = t
 	}
 
 	err := loadCNI(comps)

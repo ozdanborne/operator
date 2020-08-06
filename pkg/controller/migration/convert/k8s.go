@@ -16,7 +16,6 @@ import (
 // and errored.
 type CheckedDaemonSet struct {
 	appsv1.DaemonSet
-
 	checkedVars map[string]checkedFields
 }
 
@@ -52,28 +51,11 @@ func (r *CheckedDaemonSet) getEnv(ctx context.Context, client client.Client, con
 	}
 	r.ignoreEnv(container, key)
 
-	for _, e := range c.Env {
-		if e.Name == key {
-			if e.ValueFrom == nil {
-				return &e.Value, nil
-			}
-			if e.ValueFrom.ConfigMapKeyRef != nil {
-				cm := v1.ConfigMap{}
-				err := client.Get(ctx, types.NamespacedName{
-					Name:      e.ValueFrom.ConfigMapKeyRef.LocalObjectReference.Name,
-					Namespace: "kube-system",
-				}, &cm)
-				if err != nil {
-					return nil, err
-				}
-				v := cm.Data[e.ValueFrom.ConfigMapKeyRef.Key]
-				return &v, nil
-			}
-
-			return nil, ErrIncompatibleCluster{fmt.Sprintf("failed to read %s/%s: only configMapRef & explicit values supported for env vars at this time", container, key)}
-		}
+	v, err := getEnv(ctx, client, c.Env, key)
+	if err != nil {
+		return nil, ErrIncompatibleCluster{fmt.Sprintf("failed to read %s/%s: only configMapRef & explicit values supported for env vars at this time", container, key)}
 	}
-	return nil, nil
+	return v, nil
 }
 
 // getEnvVar returns a kubernetes envVar and marks that it has been checked.
@@ -95,6 +77,62 @@ func (r *CheckedDaemonSet) getEnvVar(container string, key string) (*corev1.EnvV
 // ignoreEnv marks an environment variable as checked so that the migrator
 // will not raise an error for it.
 func (r *CheckedDaemonSet) ignoreEnv(container, key string) {
+	if _, ok := r.checkedVars[container]; !ok {
+		r.checkedVars[container] = checkedFields{
+			map[string]bool{},
+		}
+	}
+	r.checkedVars[container].envVars[key] = true
+}
+
+type CheckedDeployment struct {
+	appsv1.Deployment
+	checkedVars map[string]checkedFields
+}
+
+// getEnv gets the value of an environment variable and marks that it has been checked.
+func (r *CheckedDeployment) getEnv(ctx context.Context, client client.Client, container string, key string) (*string, error) {
+	c := getContainer(r.Spec.Template.Spec, container)
+	if c == nil {
+		return nil, ErrIncompatibleCluster{fmt.Sprintf("couldn't find %s container in existing daemonset", container)}
+	}
+
+	r.ignoreEnv(container, key)
+	v, err := getEnv(ctx, client, c.Env, key)
+	if err != nil {
+		return nil, ErrIncompatibleCluster{fmt.Sprintf("failed to read %s/%s: only configMapRef & explicit values supported for env vars at this time", container, key)}
+	}
+	return v, nil
+}
+
+func getEnv(ctx context.Context, client client.Client, env []v1.EnvVar, key string) (*string, error) {
+	for _, e := range env {
+		if e.Name == key {
+			if e.ValueFrom == nil {
+				return &e.Value, nil
+			}
+			if e.ValueFrom.ConfigMapKeyRef != nil {
+				cm := v1.ConfigMap{}
+				err := client.Get(ctx, types.NamespacedName{
+					Name:      e.ValueFrom.ConfigMapKeyRef.LocalObjectReference.Name,
+					Namespace: "kube-system",
+				}, &cm)
+				if err != nil {
+					return nil, err
+				}
+				v := cm.Data[e.ValueFrom.ConfigMapKeyRef.Key]
+				return &v, nil
+			}
+
+			return nil, fmt.Errorf("failed to read %s: only configMapRef & explicit values supported for env vars at this time", key)
+		}
+	}
+	return nil, nil
+}
+
+// ignoreEnv marks an environment variable as checked so that the migrator
+// will not raise an error for it.
+func (r *CheckedDeployment) ignoreEnv(container, key string) {
 	if _, ok := r.checkedVars[container]; !ok {
 		r.checkedVars[container] = checkedFields{
 			map[string]bool{},
