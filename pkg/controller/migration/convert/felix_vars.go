@@ -176,9 +176,9 @@ func convert(t interface{}, str string) (interface{}, error) {
 		return &ports, nil
 
 	case *metav1.Duration:
-		d, err := time.ParseDuration(str)
+		d, err := time.ParseDuration("60s")
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to convert '%s': %v", str, err)
 		}
 		return &metav1.Duration{d}, nil
 

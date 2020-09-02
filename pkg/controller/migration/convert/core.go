@@ -181,7 +181,7 @@ func handleCore(c *components, install *Installation) error {
 		if err != nil {
 			return err
 		}
-		if n != nil && *n != "10-calico.conflist" {
+		if n != nil && *n != "10-canal.conflist" {
 			return ErrIncompatibleCluster{"CNI_CONF_NAME on 'install-cni' container must be '10-calico.conflist'"}
 		}
 	}
@@ -200,6 +200,14 @@ func handleCore(c *components, install *Installation) error {
 	c.node.ignoreEnv("upgrade-ipam", "KUBERNETES_NODE_NAME")
 	c.node.ignoreEnv("upgrade-ipam", "CALICO_NETWORKING_BACKEND")
 	c.node.ignoreEnv("install-cni", "SLEEP")
+
+	// TODO: handle canal vars
+	c.node.ignoreEnv("install-cni", "SLEEP")
+	c.node.ignoreEnv("calico-node", "USE_POD_CIDR")
+	c.node.ignoreEnv("kube-flannel", "POD_NAME")
+	c.node.ignoreEnv("kube-flannel", "POD_NAMESPACE")
+	c.node.ignoreEnv("kube-flannel", "FLANNELD_IFACE")
+	c.node.ignoreEnv("kube-flannel", "FLANNELD_IP_MASQ")
 
 	return nil
 }

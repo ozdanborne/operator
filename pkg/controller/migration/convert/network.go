@@ -98,7 +98,7 @@ func handleCalicoCNI(c *components, install *Installation) error {
 	if err != nil {
 		return err
 	}
-	if ipMethod != nil && strings.ToLower(*ipMethod) != "autodetect" {
+	if ipMethod != nil && strings.ToLower(*ipMethod) != "autodetect" && *ipMethod != "" {
 		return ErrIncompatibleCluster{
 			fmt.Sprintf("%s, unexpected IP value: '%s'. Only 'autodetect' is supported.", errCtx, *ipMethod),
 		}

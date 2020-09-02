@@ -59,34 +59,50 @@ type components struct {
 	client client.Client
 }
 
-// getComponents loads the main calico components into structs for later parsing.
-func getComponents(ctx context.Context, client client.Client) (*components, error) {
+func getCalicoNode(ctx context.Context, client client.Client) (appsv1.DaemonSet, error) {
 	var ds = appsv1.DaemonSet{}
-
 	// verify canal isn't present, or block
 	if err := client.Get(ctx, types.NamespacedName{
 		Name:      "canal-node",
 		Namespace: metav1.NamespaceSystem,
-	}, &ds); err == nil {
-		return nil, fmt.Errorf("detected existing canal installation")
-	} else if !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to check for existing canal installation: %v", err)
+	}, &ds); err != nil {
+		if !errors.IsNotFound(err) {
+			return ds, fmt.Errorf("failed to check for existing canal installation: %v", err)
+		}
+	} else {
+		return ds, nil
 	}
 
-	// canal sometimes has another name
 	if err := client.Get(ctx, types.NamespacedName{
 		Name:      "canal",
 		Namespace: metav1.NamespaceSystem,
-	}, &ds); err == nil {
-		return nil, fmt.Errorf("detected existing canal installation")
-	} else if !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to check for existing canal installation: %v", err)
+	}, &ds); err != nil {
+		if !errors.IsNotFound(err) {
+			return ds, fmt.Errorf("failed to check for existing canal installation: %v", err)
+		}
+	} else {
+		return ds, nil
 	}
 
 	if err := client.Get(ctx, types.NamespacedName{
 		Name:      "calico-node",
 		Namespace: metav1.NamespaceSystem,
 	}, &ds); err != nil {
+		if !errors.IsNotFound(err) {
+			return ds, fmt.Errorf("failed to check for existing canal installation: %v", err)
+		}
+	} else {
+		return ds, nil
+	}
+
+	return ds, fmt.Errorf("no calico-node install found")
+
+}
+
+// getComponents loads the main calico components into structs for later parsing.
+func getComponents(ctx context.Context, client client.Client) (*components, error) {
+	ds, err := getCalicoNode(ctx, client)
+	if err != nil {
 		return nil, err
 	}
 
@@ -125,7 +141,7 @@ func getComponents(ctx context.Context, client client.Client) (*components, erro
 		typha:           t,
 	}
 
-	err := loadCNI(comps)
+	err = loadCNI(comps)
 
 	return comps, err
 }
