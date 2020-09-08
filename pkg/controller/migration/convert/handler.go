@@ -20,4 +20,5 @@ var handlers = []handler{
 	handleNonCalicoCNI,
 	handleMTU,
 	handleIPPools,
+	handleCanal,
 }

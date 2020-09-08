@@ -202,7 +202,6 @@ func handleCore(c *components, install *Installation) error {
 	c.node.ignoreEnv("install-cni", "SLEEP")
 
 	// TODO: handle canal vars
-	c.node.ignoreEnv("install-cni", "SLEEP")
 	c.node.ignoreEnv("calico-node", "USE_POD_CIDR")
 	c.node.ignoreEnv("kube-flannel", "POD_NAME")
 	c.node.ignoreEnv("kube-flannel", "POD_NAMESPACE")
