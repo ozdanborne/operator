@@ -77,8 +77,10 @@ var _ = Describe("Convert network tests", func() {
 			}, operatorv1.PluginGKE),
 		)
 		It("should convert AWS CNI install", func() {
-			c := fake.NewFakeClientWithScheme(scheme, append([]runtime.Object{pool, emptyFelixConfig()}, awsCNIPolicyOnlyConfig()...)...)
-			err := Convert(ctx, c, &operatorv1.Installation{})
+			objs, err := awsCNIPolicyOnlyConfig()
+			Expect(err).ToNot(HaveOccurred())
+			c := fake.NewFakeClientWithScheme(scheme, append([]runtime.Object{pool, emptyFelixConfig()}, objs...)...)
+			err = Convert(ctx, c, &operatorv1.Installation{})
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -101,9 +103,11 @@ var _ = Describe("Convert network tests", func() {
 				IPIPMode:    crdv1.IPIPModeAlways,
 				NATOutgoing: true,
 			}
-			c := fake.NewFakeClientWithScheme(scheme, append([]runtime.Object{pool, emptyFelixConfig()}, calicoDefaultConfig()...)...)
+			testResources, err := calicoDefaultConfig()
+			Expect(err).ToNot(HaveOccurred())
+			c := fake.NewFakeClientWithScheme(scheme, append([]runtime.Object{pool, emptyFelixConfig()}, testResources...)...)
 			cfg := operatorv1.Installation{}
-			err := Convert(ctx, c, &cfg)
+			err = Convert(ctx, c, &cfg)
 			Expect(err).NotTo(HaveOccurred())
 			var _1440 int32 = 1440
 			_1intstr := intstr.FromInt(1)
