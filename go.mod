@@ -38,7 +38,7 @@ replace (
 	github.com/elastic/cloud-on-k8s => github.com/elastic/cloud-on-k8s v0.0.0-20200526192013-f13b6d26a186
 	github.com/operator-framework/operator-sdk => github.com/operator-framework/operator-sdk v0.10.1-0.20190910171846-947a464dbe96
 	k8s.io/api => k8s.io/api v0.0.0-20190409021203-6e4e0e4f393b
-	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.0.0-20190409022649-727a075fdec8
+	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.18.0
 	k8s.io/apimachinery => k8s.io/apimachinery v0.0.0-20190404173353-6a84e37a896d
 	k8s.io/apiserver => k8s.io/apiserver v0.0.0-20190409021813-1ec86e4da56c
 	k8s.io/cli-runtime => k8s.io/cli-runtime v0.0.0-20190409023024-d644b00f3b79

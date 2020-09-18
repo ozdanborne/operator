@@ -17,10 +17,14 @@
 package convert
 
 import (
-	"bytes"
-	"io/ioutil"
+	"fmt"
+	"io"
+	"os"
 
+	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	kyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
 )
 
@@ -34,19 +38,36 @@ func awsCNIPolicyOnlyConfig() ([]runtime.Object, error) {
 
 func loadYaml(filename string) ([]runtime.Object, error) {
 	var rtos = []runtime.Object{}
-	allBits, err := ioutil.ReadFile(filename)
+	r, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	byteObjs := bytes.Split(allBits, []byte("---"))
+	kdd := kyaml.NewDocumentDecoder(r)
 
-	for _, bits := range byteObjs {
-		rd := scheme.Codecs.UniversalDeserializer()
-		rto, _, err := rd.Decode(bits, nil, nil)
+	if err := apiextensions.AddToScheme(scheme.Scheme); err != nil {
+		return nil, err
+	}
+	codecs := serializer.NewCodecFactory(scheme.Scheme)
+	rd := codecs.UniversalDeserializer()
+	for {
+		bits := make([]byte, 1024*100)
+		i, err := kdd.Read(bits)
+		if err != nil {
+			if err == io.EOF {
+				r.Close()
+				break
+			}
+			return nil, fmt.Errorf("%v (%s)", err, string(bits))
+		}
+
+		rto, _, err := rd.Decode(bits[:i], nil, nil)
 		if err != nil {
 			// calico manifests commonly contain empty yaml documents, or start with a '---'. ignore these empty documents
-			continue
+			if runtime.IsMissingKind(err) {
+				continue
+			}
+			return nil, err
 		}
 		rtos = append(rtos, rto)
 	}
