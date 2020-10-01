@@ -82,4 +82,58 @@ var _ = Describe("CNI", func() {
         }`))
 		Expect(err).To(HaveOccurred())
 	})
+
+	It("should parse CNI config name from conflist", func() {
+		conf, err := Parse(`{
+			"name": "custom-name",
+			"plugins": [{
+				"type": "calico",
+				"datastore_type": "kubernetes",
+				"nodename": "__KUBERNETES_NODE_NAME__",
+				"ipam": {"type": "host-local"},
+				"policy": {"type": "k8s"}
+			}]
+		}`)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(conf.ConfigName).To(Equal("custom-name"))
+	})
+
+	It("should parse empty config name from conflist", func() {
+		conf, err := Parse(`{
+			"plugins": [{
+				"type": "calico",
+				"datastore_type": "kubernetes",
+				"nodename": "__KUBERNETES_NODE_NAME__",
+				"ipam": {"type": "host-local"},
+				"policy": {"type": "k8s"}
+			}]
+		}`)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(conf.ConfigName).To(Equal(""))
+	})
+
+	It("should parse cni config name from conf", func() {
+		conf, err := Parse(`{
+			"name": "custom-name",
+			"type": "calico",
+			"datastore_type": "kubernetes",
+			"nodename": "__KUBERNETES_NODE_NAME__",
+			"ipam": {"type": "host-local"},
+			"policy": {"type": "k8s"}
+		  }`)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(conf.ConfigName).To(Equal("custom-name"))
+	})
+
+	It("should parse missing cni config name from conf", func() {
+		conf, err := Parse(`{
+			"type": "calico",
+			"datastore_type": "kubernetes",
+			"nodename": "__KUBERNETES_NODE_NAME__",
+			"ipam": {"type": "host-local"},
+			"policy": {"type": "k8s"}
+		  }`)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(conf.ConfigName).To(Equal(""))
+	})
 })
