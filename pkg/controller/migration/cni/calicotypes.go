@@ -2,18 +2,10 @@ package cni
 
 // CalicoConf stores the common network config for Calico CNI plugin
 type CalicoConf struct {
-	CNIVersion string `json:"cniVersion,omitempty"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	IPAM       struct {
-		Name       string
-		Type       string   `json:"type"`
-		Subnet     string   `json:"subnet"`
-		AssignIpv4 *string  `json:"assign_ipv4"`
-		AssignIpv6 *string  `json:"assign_ipv6"`
-		IPv4Pools  []string `json:"ipv4_pools,omitempty"`
-		IPv6Pools  []string `json:"ipv6_pools,omitempty"`
-	} `json:"ipam,omitempty"`
+	CNIVersion           string            `json:"cniVersion,omitempty"`
+	Name                 string            `json:"name"`
+	Type                 string            `json:"type"`
+	IPAM                 CalicoIPAM        `json:"ipam,omitempty"`
 	MTU                  int               `json:"mtu"`
 	Nodename             string            `json:"nodename"`
 	NodenameFileOptional bool              `json:"nodename_file_optional"`
@@ -28,6 +20,16 @@ type CalicoConf struct {
 	EtcdCaCertFile       string            `json:"etcd_ca_cert_file"`
 	ContainerSettings    ContainerSettings `json:"container_settings,omitempty"`
 	IncludeDefaultRoutes bool              `json:"include_default_routes,omitempty"`
+}
+
+type CalicoIPAM struct {
+	Name       string
+	Type       string   `json:"type"`
+	Subnet     string   `json:"subnet"`
+	AssignIpv4 *string  `json:"assign_ipv4"`
+	AssignIpv6 *string  `json:"assign_ipv6"`
+	IPv4Pools  []string `json:"ipv4_pools,omitempty"`
+	IPv6Pools  []string `json:"ipv6_pools,omitempty"`
 }
 
 // ContainerSettings contains configuration options

@@ -11,6 +11,7 @@ import (
 	"github.com/tigera/operator/pkg/apis"
 	crdv1 "github.com/tigera/operator/pkg/apis/crd.projectcalico.org/v1"
 	operatorv1 "github.com/tigera/operator/pkg/apis/operator/v1"
+	"github.com/tigera/operator/pkg/controller/migration/cni"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -499,44 +500,30 @@ var _ = Describe("Convert network tests", func() {
 					Expect(*cfg.Spec.CalicoNetwork.HostPorts).To(Equal(operatorv1.HostPortsEnabled))
 				})
 			})
-			DescribeTable("block on IPAM flags", func(ipam string) {
-				ds := emptyNodeSpec()
-				ds.Spec.Template.Spec.InitContainers[0].Env = []corev1.EnvVar{{
-					Name: "CNI_NETWORK_CONFIG",
-					Value: fmt.Sprintf(`{
-"name": "k8s-pod-network",
-"cniVersion": "0.3.1",
-"plugins": [
-  {
-	"type": "calico",
-	"log_level": "info",
-	"datastore_type": "kubernetes",
-	"nodename": "__KUBERNETES_NODE_NAME__",
-	"mtu": __CNI_MTU__,
-	"ipam": { "type": "calico-ipam", %s },
-	"policy": {
-		"type": "k8s"
-	},
-	"kubernetes": {
-		"kubeconfig": "__KUBECONFIG_FILEPATH__"
-	}
-  }
-  ]
-}`, ipam),
-				}}
-				ds.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{{
-					Name:  "CALICO_NETWORKING_BACKEND",
-					Value: "bird",
-				}}
-				c := fake.NewFakeClientWithScheme(scheme, ds, emptyKubeControllerSpec(), pool, emptyFelixConfig())
-				cfg := &operatorv1.Installation{}
-				err := Convert(ctx, c, cfg)
+			It("shouldn't block on supported Calico-IPAM", func() {
+				cfg := &operatorv1.Installation{
+					Spec: operatorv1.InstallationSpec{
+						CalicoNetwork: &operatorv1.CalicoNetworkSpec{},
+					},
+				}
+				err := subhandleCalicoIPAM("bird", cni.CalicoConf{}, cfg)
+				Expect(err).ToNot(HaveOccurred())
+			})
+			DescribeTable("block on unsupported Calico-IPAM fields", func(ipam cni.CalicoIPAM) {
+				cfg := &operatorv1.Installation{
+					Spec: operatorv1.InstallationSpec{
+						CalicoNetwork: &operatorv1.CalicoNetworkSpec{},
+					},
+				}
+				err := subhandleCalicoIPAM("bird", cni.CalicoConf{
+					IPAM: ipam,
+				}, cfg)
 				Expect(err).To(HaveOccurred())
 			},
-				Entry("subnet", `"subnet": "usePodCidr"`),
-				Entry("ipv4_pools", `"ipv4_pools": ["10.0.0.0/24"]`),
-				Entry("ipv6_pools", `"ipv6_pools": ["2001:db8::1/120"]`),
-				Entry("both pools", `"ipv4_pools": ["10.0.0.0/24"], "ipv6_pools": ["2001:db8::1/120"]`),
+				Entry("subnet", cni.CalicoIPAM{Subnet: "usePodCidr"}),
+				Entry("ipv4_pools", cni.CalicoIPAM{IPv4Pools: []string{"10.0.0.0/24"}}),
+				Entry("ipv6_pools", cni.CalicoIPAM{IPv6Pools: []string{"2001:db8::1/120"}}),
+				Entry("both pools", cni.CalicoIPAM{IPv4Pools: []string{"10.0.0.0/24"}, IPv6Pools: []string{"2001:db8::1/120"}}),
 			)
 		})
 	})
