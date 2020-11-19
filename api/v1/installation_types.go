@@ -453,6 +453,10 @@ type InstallationStatus struct {
 	// Variant is the most recently observed installed variant - one of Calico or TigeraSecureEnterprise
 	// +kubebuilder:validation:Enum=Calico;TigeraSecureEnterprise
 	Variant ProductVariant `json:"variant,omitempty"`
+
+	// Computed is the final installation including overlaid resources.
+	// +optional
+	Computed *InstallationSpec `json:"computed,omitempty"`
 }
 
 // +kubebuilder:object:root=true
