@@ -109,7 +109,7 @@ var _ = Describe("ManagementClusterConnection controller tests", func() {
 				Spec:       operatorv1.InstallationSpec{},
 				ObjectMeta: metav1.ObjectMeta{Name: "default"},
 				Status: operatorv1.InstallationStatus{
-					Computed: &operatorv1.InstallationSpec{
+					Computed: operatorv1.InstallationSpec{
 						Registry:           "my-reg",
 						KubernetesProvider: operatorv1.ProviderNone,
 					},

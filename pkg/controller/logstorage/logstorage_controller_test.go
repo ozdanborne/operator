@@ -126,7 +126,7 @@ var _ = Describe("LogStorage controller", func() {
 							Name: "default",
 						},
 						Status: operatorv1.InstallationStatus{
-							Computed: &operatorv1.InstallationSpec{
+							Computed: operatorv1.InstallationSpec{
 								Variant: operatorv1.TigeraSecureEnterprise,
 							},
 						},
@@ -266,7 +266,7 @@ var _ = Describe("LogStorage controller", func() {
 							Name: "default",
 						},
 						Status: operatorv1.InstallationStatus{
-							Computed: &operatorv1.InstallationSpec{
+							Computed: operatorv1.InstallationSpec{
 								Variant: operatorv1.TigeraSecureEnterprise,
 							},
 						},
@@ -369,7 +369,7 @@ var _ = Describe("LogStorage controller", func() {
 							Name: "default",
 						},
 						Status: operatorv1.InstallationStatus{
-							Computed: &operatorv1.InstallationSpec{
+							Computed: operatorv1.InstallationSpec{
 								Variant: operatorv1.TigeraSecureEnterprise,
 							},
 						},
@@ -486,11 +486,9 @@ func setUpLogStorageComponents(cli client.Client, ctx context.Context, storageCl
 	By("creating all the components needed for LogStorage to be available")
 	component := render.LogStorage(
 		ls,
-		&operatorv1.Installation{
-			Spec: operatorv1.InstallationSpec{
-				KubernetesProvider: operatorv1.ProviderNone,
-				Registry:           "testregistry.com/",
-			},
+		operatorv1.InstallationSpec{
+			KubernetesProvider: operatorv1.ProviderNone,
+			Registry:           "testregistry.com/",
 		},
 		nil, managementClusterConnection,
 		&esv1.Elasticsearch{ObjectMeta: metav1.ObjectMeta{Name: render.ElasticsearchName, Namespace: render.ElasticsearchNamespace}},

@@ -89,7 +89,7 @@ var _ = Describe("authentication controller tests", func() {
 					Name: "default",
 				},
 				Status: operatorv1.InstallationStatus{
-					Computed: &operatorv1.InstallationSpec{
+					Computed: operatorv1.InstallationSpec{
 						Variant: operatorv1.TigeraSecureEnterprise,
 					},
 				},

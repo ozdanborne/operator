@@ -637,7 +637,7 @@ func (r *ReconcileInstallation) Reconcile(request reconcile.Request) (reconcile.
 	// does not get to that point.
 	if reflect.DeepEqual(status, operator.InstallationStatus{}) {
 		instance.Status = operator.InstallationStatus{
-			Computed: &operator.InstallationSpec{},
+			Computed: operator.InstallationSpec{},
 		}
 		if err := r.client.Status().Update(ctx, instance); err != nil {
 			r.SetDegraded("Failed to write default status", err, reqLogger)
@@ -824,7 +824,7 @@ func (r *ReconcileInstallation) Reconcile(request reconcile.Request) (reconcile.
 	// If we're on OpenShift on AWS render a Job (and needed resources) to
 	// setup the security groups we need for IPIP, BGP, and Typha communication.
 	if openShiftOnAws {
-		awsSetup, err := render.AWSSecurityGroupSetup(instance.Spec.ImagePullSecrets, instance)
+		awsSetup, err := render.AWSSecurityGroupSetup(instance.Spec.ImagePullSecrets, instance.Status.Computed)
 		if err != nil {
 			// If there is a problem rendering this do not degrade or stop rendering
 			// anything else.
@@ -922,7 +922,7 @@ func (r *ReconcileInstallation) Reconcile(request reconcile.Request) (reconcile.
 	// Write updated status.
 	instance.Status.MTU = int32(statusMTU)
 	instance.Status.Variant = instance.Spec.Variant
-	instance.Status.Computed = &instance.Spec
+	instance.Status.Computed = instance.Spec
 	if err = r.client.Status().Update(ctx, instance); err != nil {
 		return reconcile.Result{}, err
 	}

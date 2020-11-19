@@ -71,7 +71,7 @@ var _ = Describe("Compliance controller tests", func() {
 			ctx,
 			&operatorv1.Installation{
 				Status: operatorv1.InstallationStatus{
-					Computed: &operatorv1.InstallationSpec{
+					Computed: operatorv1.InstallationSpec{
 						Registry: "my-reg",
 						// The test is provider agnostic.
 						KubernetesProvider: operatorv1.ProviderNone,

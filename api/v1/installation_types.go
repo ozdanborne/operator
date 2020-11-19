@@ -460,7 +460,7 @@ type InstallationStatus struct {
 
 	// Computed is the final installation including overlaid resources.
 	// +optional
-	Computed *InstallationSpec `json:"computed,omitempty"`
+	Computed InstallationSpec `json:"computed,omitempty"`
 }
 
 // +kubebuilder:object:root=true
