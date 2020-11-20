@@ -808,7 +808,7 @@ func (r *ReconcileInstallation) Reconcile(request reconcile.Request) (reconcile.
 			components = append(components, awsSetup)
 		}
 	}
-	components = append(components, calico.Render()...)
+	components = append(components, calico)
 
 	for _, component := range components {
 		if err := handler.CreateOrUpdate(ctx, component, nil); err != nil {

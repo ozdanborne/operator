@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/tigera/operator/pkg/common"
-	"k8s.io/apimachinery/pkg/runtime"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -88,7 +87,8 @@ var _ = Describe("Rendering tests", func() {
 		// - 1 PriorityClass
 		c, err := render.Calico(k8sServiceEp, instance, false, nil, nil, nil, nil, typhaNodeTLS, nil, nil, operator.ProviderNone, nil, false)
 		Expect(err).To(BeNil(), "Expected Calico to create successfully %s", err)
-		Expect(componentCount(c.Render())).To(Equal(6 + 4 + 2 + 7 + 5 + 1 + 1))
+		resources, _ := c.Objects()
+		Expect(len(resources)).To(Equal(6 + 4 + 2 + 7 + 5 + 1 + 1))
 	})
 
 	It("should render all resources when variant is Tigera Secure", func() {
@@ -101,7 +101,8 @@ var _ = Describe("Rendering tests", func() {
 		instance.Spec.NodeMetricsPort = &nodeMetricsPort
 		c, err := render.Calico(k8sServiceEp, instance, true, nil, nil, nil, nil, typhaNodeTLS, nil, nil, operator.ProviderNone, nil, false)
 		Expect(err).To(BeNil(), "Expected Calico to create successfully %s", err)
-		Expect(componentCount(c.Render())).To(Equal((6 + 4 + 2 + 7 + 5 + 1 + 1) + 1 + 1))
+		resources, _ := c.Objects()
+		Expect(len(resources)).To(Equal((6 + 4 + 2 + 7 + 5 + 1 + 1) + 1 + 1))
 	})
 
 	It("should render all resources when variant is Tigera Secure and Management Cluster", func() {
@@ -154,24 +155,10 @@ var _ = Describe("Rendering tests", func() {
 			{"calico-kube-controllers", "", "policy", "v1beta1", "PodSecurityPolicy"},
 		}
 
-		var resources []runtime.Object
-		for _, component := range c.Render() {
-			var toCreate, _ = component.Objects()
-			resources = append(resources, toCreate...)
-		}
+		resources, _ := c.Objects()
 		Expect(len(resources)).To(Equal(len(expectedResources)))
-
 		for i, expectedRes := range expectedResources {
 			ExpectResource(resources[i], expectedRes.name, expectedRes.ns, expectedRes.group, expectedRes.version, expectedRes.kind)
 		}
 	})
 })
-
-func componentCount(components []render.Component) int {
-	count := 0
-	for _, c := range components {
-		objsToCreate, _ := c.Objects()
-		count += len(objsToCreate)
-	}
-	return count
-}

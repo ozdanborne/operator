@@ -53,11 +53,6 @@ type Component interface {
 	SupportedOSType() OSType
 }
 
-// A Renderer is capable of generating components to be installed on the cluster.
-type Renderer interface {
-	Render() []Component
-}
-
 type TyphaNodeTLS struct {
 	CAConfigMap *corev1.ConfigMap
 	TyphaSecret *corev1.Secret
@@ -78,7 +73,7 @@ func Calico(
 	p operator.Provider,
 	aci *operator.AmazonCloudIntegration,
 	up bool,
-) (Renderer, error) {
+) (Component, error) {
 
 	tcms := []*corev1.ConfigMap{}
 	tss := []*corev1.Secret{}
@@ -232,7 +227,7 @@ type calicoRenderer struct {
 	authentication              *operator.Authentication
 }
 
-func (r calicoRenderer) Render() []Component {
+func (r calicoRenderer) render() []Component {
 	var components []Component
 	components = appendNotNil(components, PriorityClassDefinitions())
 	components = appendNotNil(components, Namespaces(r.installation, r.pullSecrets))
@@ -242,6 +237,23 @@ func (r calicoRenderer) Render() []Component {
 	components = appendNotNil(components, Node(r.k8sServiceEp, r.installation, r.birdTemplates, r.typhaNodeTLS, r.amazonCloudInt, r.upgrade))
 	components = appendNotNil(components, KubeControllers(r.installation, r.logStorageExists, r.managementCluster, r.managementClusterConnection, r.managerInternalTLSecret, r.authentication))
 	return components
+}
+
+func (r calicoRenderer) Objects() (objsToCreate, objsToDelete []runtime.Object) {
+	for _, a := range r.render() {
+		b, c := a.Objects()
+		objsToCreate = append(objsToCreate, b...)
+		objsToDelete = append(objsToDelete, c...)
+	}
+	return
+}
+
+func (r calicoRenderer) Ready() bool {
+	return true
+}
+
+func (r calicoRenderer) SupportedOSType() OSType {
+	return OSTypeAny
 }
 
 func appendNotNil(components []Component, c Component) []Component {
