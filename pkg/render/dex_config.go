@@ -447,6 +447,11 @@ func (d *dexConfig) Connector() map[string]interface{} {
 		"userNameKey": d.UsernameClaim(),
 		"userIDKey":   d.UsernameClaim(),
 
+		"insecureEnableGroups": true,
+		"claimMapping": map[string]interface{}{
+			"groups": "https://calicocloud.io/groups",
+		}
+
 		//Openshift specific.
 		RootCASecretField: rootCASecretLocation,
 	}
