@@ -117,6 +117,8 @@ type ManagerConfiguration struct {
 	ESLicenseType           ElasticsearchLicenseType
 	Replicas                *int32
 	ComplianceFeatureActive bool
+
+	UseTrustedCertBundleWithVoltron bool
 }
 
 type managerComponent struct {
@@ -420,6 +422,7 @@ func (c *managerComponent) managerProxyContainer() corev1.Container {
 		{Name: "VOLTRON_HTTPS_CERT", Value: certPath},
 		{Name: "VOLTRON_TUNNEL_KEY", Value: tunnelKeyPath},
 		{Name: "VOLTRON_TUNNEL_CERT", Value: tunnelCertPath},
+		{Name: "VOLTRON_USE_HTTPS_CERT_ON_VOLTRON", Value: strconv.FormatBool(c.cfg.UseTrustedCertBundleWithVoltron)},
 		{Name: "VOLTRON_INTERNAL_HTTPS_KEY", Value: intKeyPath},
 		{Name: "VOLTRON_INTERNAL_HTTPS_CERT", Value: intCertPath},
 		{Name: "VOLTRON_ENABLE_MULTI_CLUSTER_MANAGEMENT", Value: strconv.FormatBool(c.cfg.ManagementCluster != nil)},
